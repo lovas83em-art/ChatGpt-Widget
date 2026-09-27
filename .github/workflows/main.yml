@@ -20,16 +20,12 @@ jobs:
           set -e
           rm -rf project
           mkdir -p project
-
           ZIP=$(find . -maxdepth 1 -type f -name 'ChatGPTMapsWidget-GitHub-ApkBuild.zip' -print -quit)
-
           if [ -z "$ZIP" ]; then
             echo "Nem található a ChatGPTMapsWidget-GitHub-ApkBuild.zip fájl."
             exit 1
           fi
-
           unzip -q "$ZIP" -d project
-          echo "ZIP kibontva."
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -44,9 +40,7 @@ jobs:
           log-accepted-android-sdk-licenses: false
 
       - name: Install Android SDK
-        shell: bash
-        run: |
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -57,26 +51,21 @@ jobs:
         shell: bash
         run: |
           set -e
-
           PROJECT=$(find project -type f \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) -print -quit)
-
           if [ -z "$PROJECT" ]; then
             echo "Nem található Android Gradle projekt."
             exit 1
           fi
-
-          echo "Android projekt: $PROJECT"
           echo "PROJECT_DIR=$(dirname "$PROJECT")" >> "$GITHUB_ENV"
 
       - name: Enable AndroidX
         working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
         run: |
           touch gradle.properties
           grep -qxF "android.useAndroidX=true" gradle.properties || echo "android.useAndroidX=true" >> gradle.properties
           grep -qxF "android.enableJetifier=true" gradle.properties || echo "android.enableJetifier=true" >> gradle.properties
 
-      - name: Create Samsung compatible colorful widget
+      - name: Create exactly one home-screen widget
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
@@ -89,11 +78,9 @@ jobs:
           SRC_DIR="$APP_DIR/src/main/java/$PKG_PATH"
           RES_DIR="$APP_DIR/src/main/res"
 
-          mkdir -p "$SRC_DIR"
-          mkdir -p "$RES_DIR/layout"
-          mkdir -p "$RES_DIR/xml"
-          mkdir -p "$RES_DIR/drawable"
+          mkdir -p "$SRC_DIR" "$RES_DIR/layout" "$RES_DIR/xml" "$RES_DIR/drawable"
 
+          # One provider only. The widget has three clickable areas.
           cat > "$SRC_DIR/ChatGPTMapsWidgetProvider.kt" <<'EOF'
           package com.example.chatgptmaps
 
@@ -109,170 +96,138 @@ jobs:
 
               override fun onUpdate(
                   context: Context,
-                  appWidgetManager: AppWidgetManager,
-                  appWidgetIds: IntArray
+                  manager: AppWidgetManager,
+                  ids: IntArray
               ) {
-                  for (appWidgetId in appWidgetIds) {
-                      updateWidget(context, appWidgetManager, appWidgetId)
+                  for (id in ids) {
+                      val views = RemoteViews(
+                          context.packageName,
+                          R.layout.widget_one
+                      )
+
+                      val flags =
+                          PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+
+                      val maps =
+                          context.packageManager.getLaunchIntentForPackage(
+                              "com.google.android.apps.maps"
+                          ) ?: Intent(
+                              Intent.ACTION_VIEW,
+                              Uri.parse("geo:0,0")
+                          )
+
+                      val chat =
+                          context.packageManager.getLaunchIntentForPackage(
+                              "com.openai.chatgpt"
+                          ) ?: Intent(
+                              Intent.ACTION_VIEW,
+                              Uri.parse("https://chatgpt.com/")
+                          )
+
+                      val own =
+                          Intent(
+                              Intent.ACTION_VIEW,
+                              Uri.parse("geo:0,0")
+                          )
+
+                      views.setOnClickPendingIntent(
+                          R.id.button_maps,
+                          PendingIntent.getActivity(
+                              context,
+                              id * 10 + 1,
+                              maps,
+                              flags
+                          )
+                      )
+
+                      views.setOnClickPendingIntent(
+                          R.id.button_chatgpt,
+                          PendingIntent.getActivity(
+                              context,
+                              id * 10 + 2,
+                              chat,
+                              flags
+                          )
+                      )
+
+                      views.setOnClickPendingIntent(
+                          R.id.button_own,
+                          PendingIntent.getActivity(
+                              context,
+                              id * 10 + 3,
+                              own,
+                              flags
+                          )
+                      )
+
+                      manager.updateAppWidget(id, views)
                   }
               }
-
-              private fun updateWidget(
-                  context: Context,
-                  appWidgetManager: AppWidgetManager,
-                  appWidgetId: Int
-              ) {
-                  val views = RemoteViews(
-                      context.packageName,
-                      R.layout.widget_chatgpt_maps_modern
-                  )
-
-                  val flags =
-                      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-
-                  val mapsIntent =
-                      context.packageManager.getLaunchIntentForPackage(
-                          "com.google.android.apps.maps"
-                      ) ?: Intent(
-                          Intent.ACTION_VIEW,
-                          Uri.parse("geo:0,0")
-                      ).apply {
-                          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                      }
-
-                  val chatIntent =
-                      context.packageManager.getLaunchIntentForPackage(
-                          "com.openai.chatgpt"
-                      ) ?: Intent(
-                          Intent.ACTION_VIEW,
-                          Uri.parse("https://chatgpt.com/")
-                      ).apply {
-                          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                      }
-
-                  val ownIntent = Intent(
-                      context,
-                      ChatGPTMapsWidgetActivity::class.java
-                  )
-
-                  views.setOnClickPendingIntent(
-                      R.id.widget_maps,
-                      PendingIntent.getActivity(
-                          context,
-                          appWidgetId * 10 + 1,
-                          mapsIntent,
-                          flags
-                      )
-                  )
-
-                  views.setOnClickPendingIntent(
-                      R.id.widget_chatgpt,
-                      PendingIntent.getActivity(
-                          context,
-                          appWidgetId * 10 + 2,
-                          chatIntent,
-                          flags
-                      )
-                  )
-
-                  views.setOnClickPendingIntent(
-                      R.id.widget_own,
-                      PendingIntent.getActivity(
-                          context,
-                          appWidgetId * 10 + 3,
-                          ownIntent,
-                          flags
-                      )
-                  )
-
-                  appWidgetManager.updateAppWidget(appWidgetId, views)
-              }
           }
           EOF
 
-          cat > "$SRC_DIR/ChatGPTMapsWidgetActivity.kt" <<'EOF'
-          package com.example.chatgptmaps
+          # Remove the old custom Activity; the one widget needs no extra Activity.
+          rm -f "$SRC_DIR/ChatGPTMapsWidgetActivity.kt"
 
-          import android.app.Activity
-          import android.content.Intent
-          import android.net.Uri
-          import android.os.Bundle
-
-          class ChatGPTMapsWidgetActivity : Activity() {
-
-              override fun onCreate(savedInstanceState: Bundle?) {
-                  super.onCreate(savedInstanceState)
-
-                  val intent = Intent(
-                      Intent.ACTION_VIEW,
-                      Uri.parse("geo:0,0")
-                  )
-
-                  startActivity(intent)
-                  finish()
-              }
-          }
-          EOF
-
-          cat > "$RES_DIR/drawable/widget_background.xml" <<'EOF'
+          cat > "$RES_DIR/drawable/one_widget_bg.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <shape xmlns:android="http://schemas.android.com/apk/res/android">
-              <solid android:color="#061820" />
+              <solid android:color="#071820" />
               <corners android:radius="28dp" />
           </shape>
           EOF
 
-          cat > "$RES_DIR/drawable/tile_maps.xml" <<'EOF'
+          cat > "$RES_DIR/drawable/one_tile_green.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <shape xmlns:android="http://schemas.android.com/apk/res/android">
               <gradient
                   android:type="linear"
                   android:angle="0"
-                  android:startColor="#00A88F"
-                  android:centerColor="#00827B"
-                  android:endColor="#063B46" />
-              <corners android:radius="24dp" />
+                  android:startColor="#00B894"
+                  android:centerColor="#008F83"
+                  android:endColor="#07515A" />
+              <corners android:radius="22dp" />
               <stroke android:width="1dp" android:color="#00E8C2" />
           </shape>
           EOF
 
-          cat > "$RES_DIR/drawable/tile_chatgpt.xml" <<'EOF'
+          cat > "$RES_DIR/drawable/one_tile_blue.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <shape xmlns:android="http://schemas.android.com/apk/res/android">
               <gradient
                   android:type="linear"
                   android:angle="0"
-                  android:startColor="#00D7E8"
-                  android:centerColor="#087DC9"
-                  android:endColor="#062D66" />
-              <corners android:radius="24dp" />
-              <stroke android:width="1dp" android:color="#00DFFF" />
+                  android:startColor="#00D8E8"
+                  android:centerColor="#087DCA"
+                  android:endColor="#07346B" />
+              <corners android:radius="22dp" />
+              <stroke android:width="1dp" android:color="#00E5FF" />
           </shape>
           EOF
 
-          cat > "$RES_DIR/drawable/tile_own.xml" <<'EOF'
+          cat > "$RES_DIR/drawable/one_tile_purple.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <shape xmlns:android="http://schemas.android.com/apk/res/android">
               <gradient
                   android:type="linear"
                   android:angle="0"
-                  android:startColor="#5422D9"
-                  android:centerColor="#6328D7"
-                  android:endColor="#26105F" />
-              <corners android:radius="24dp" />
-              <stroke android:width="1dp" android:color="#9B55FF" />
+                  android:startColor="#5D25E8"
+                  android:centerColor="#682BDD"
+                  android:endColor="#28115F" />
+              <corners android:radius="22dp" />
+              <stroke android:width="1dp" android:color="#A55BFF" />
           </shape>
           EOF
 
-          cat > "$RES_DIR/drawable/circle_maps.xml" <<'EOF'
+          cat > "$RES_DIR/drawable/one_circle_green.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <shape xmlns:android="http://schemas.android.com/apk/res/android"
               android:shape="oval">
-              <solid android:color="#18B95B" />
+              <solid android:color="#19B85B" />
           </shape>
           EOF
 
-          cat > "$RES_DIR/drawable/circle_chat.xml" <<'EOF'
+          cat > "$RES_DIR/drawable/one_circle_blue.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <shape xmlns:android="http://schemas.android.com/apk/res/android"
               android:shape="oval">
@@ -280,7 +235,7 @@ jobs:
           </shape>
           EOF
 
-          cat > "$RES_DIR/drawable/circle_own.xml" <<'EOF'
+          cat > "$RES_DIR/drawable/one_circle_purple.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <shape xmlns:android="http://schemas.android.com/apk/res/android"
               android:shape="oval">
@@ -288,7 +243,7 @@ jobs:
           </shape>
           EOF
 
-          cat > "$RES_DIR/drawable/ic_chevron.xml" <<'EOF'
+          cat > "$RES_DIR/drawable/one_chevron.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
               android:width="28dp"
@@ -301,11 +256,11 @@ jobs:
           </vector>
           EOF
 
-          cat > "$RES_DIR/drawable/ic_pin.xml" <<'EOF'
+          cat > "$RES_DIR/drawable/one_pin.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
-              android:width="58dp"
-              android:height="58dp"
+              android:width="54dp"
+              android:height="54dp"
               android:viewportWidth="64"
               android:viewportHeight="64">
               <path
@@ -320,11 +275,11 @@ jobs:
           </vector>
           EOF
 
-          cat > "$RES_DIR/drawable/ic_chatgpt.xml" <<'EOF'
+          cat > "$RES_DIR/drawable/one_chatgpt.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
-              android:width="58dp"
-              android:height="58dp"
+              android:width="54dp"
+              android:height="54dp"
               android:viewportWidth="64"
               android:viewportHeight="64">
               <path
@@ -333,11 +288,11 @@ jobs:
           </vector>
           EOF
 
-          cat > "$RES_DIR/drawable/ic_compass.xml" <<'EOF'
+          cat > "$RES_DIR/drawable/one_compass.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
-              android:width="58dp"
-              android:height="58dp"
+              android:width="54dp"
+              android:height="54dp"
               android:viewportWidth="64"
               android:viewportHeight="64">
               <path
@@ -355,7 +310,7 @@ jobs:
           </vector>
           EOF
 
-          cat > "$RES_DIR/layout/widget_chatgpt_maps_modern.xml" <<'EOF'
+          cat > "$RES_DIR/layout/widget_one.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
               android:layout_width="match_parent"
@@ -363,25 +318,25 @@ jobs:
               android:orientation="horizontal"
               android:gravity="center"
               android:padding="4dp"
-              android:background="@drawable/widget_background">
+              android:background="@drawable/one_widget_bg">
 
               <LinearLayout
-                  android:id="@+id/widget_maps"
+                  android:id="@+id/button_maps"
                   android:layout_width="0dp"
                   android:layout_height="match_parent"
                   android:layout_weight="1"
                   android:layout_margin="2dp"
                   android:gravity="center_vertical"
                   android:orientation="horizontal"
-                  android:paddingStart="8dp"
-                  android:paddingEnd="7dp"
-                  android:background="@drawable/tile_maps">
+                  android:paddingStart="7dp"
+                  android:paddingEnd="6dp"
+                  android:background="@drawable/one_tile_green">
 
                   <ImageView
-                      android:layout_width="46dp"
-                      android:layout_height="46dp"
-                      android:src="@drawable/ic_pin"
-                      android:contentDescription="Google Maps" />
+                      android:layout_width="44dp"
+                      android:layout_height="44dp"
+                      android:src="@drawable/one_pin"
+                      android:contentDescription="Térkép" />
 
                   <View
                       android:layout_width="0dp"
@@ -389,30 +344,30 @@ jobs:
                       android:layout_weight="1" />
 
                   <ImageView
-                      android:layout_width="34dp"
-                      android:layout_height="34dp"
+                      android:layout_width="32dp"
+                      android:layout_height="32dp"
                       android:padding="6dp"
-                      android:background="@drawable/circle_maps"
-                      android:src="@drawable/ic_chevron"
+                      android:background="@drawable/one_circle_green"
+                      android:src="@drawable/one_chevron"
                       android:contentDescription="Megnyitás" />
               </LinearLayout>
 
               <LinearLayout
-                  android:id="@+id/widget_chatgpt"
+                  android:id="@+id/button_chatgpt"
                   android:layout_width="0dp"
                   android:layout_height="match_parent"
                   android:layout_weight="1"
                   android:layout_margin="2dp"
                   android:gravity="center_vertical"
                   android:orientation="horizontal"
-                  android:paddingStart="8dp"
-                  android:paddingEnd="7dp"
-                  android:background="@drawable/tile_chatgpt">
+                  android:paddingStart="7dp"
+                  android:paddingEnd="6dp"
+                  android:background="@drawable/one_tile_blue">
 
                   <ImageView
-                      android:layout_width="48dp"
-                      android:layout_height="48dp"
-                      android:src="@drawable/ic_chatgpt"
+                      android:layout_width="46dp"
+                      android:layout_height="46dp"
+                      android:src="@drawable/one_chatgpt"
                       android:contentDescription="ChatGPT" />
 
                   <View
@@ -421,30 +376,30 @@ jobs:
                       android:layout_weight="1" />
 
                   <ImageView
-                      android:layout_width="34dp"
-                      android:layout_height="34dp"
+                      android:layout_width="32dp"
+                      android:layout_height="32dp"
                       android:padding="6dp"
-                      android:background="@drawable/circle_chat"
-                      android:src="@drawable/ic_chevron"
+                      android:background="@drawable/one_circle_blue"
+                      android:src="@drawable/one_chevron"
                       android:contentDescription="Megnyitás" />
               </LinearLayout>
 
               <LinearLayout
-                  android:id="@+id/widget_own"
+                  android:id="@+id/button_own"
                   android:layout_width="0dp"
                   android:layout_height="match_parent"
                   android:layout_weight="1"
                   android:layout_margin="2dp"
                   android:gravity="center_vertical"
                   android:orientation="horizontal"
-                  android:paddingStart="8dp"
-                  android:paddingEnd="7dp"
-                  android:background="@drawable/tile_own">
+                  android:paddingStart="7dp"
+                  android:paddingEnd="6dp"
+                  android:background="@drawable/one_tile_purple">
 
                   <ImageView
-                      android:layout_width="48dp"
-                      android:layout_height="48dp"
-                      android:src="@drawable/ic_compass"
+                      android:layout_width="46dp"
+                      android:layout_height="46dp"
+                      android:src="@drawable/one_compass"
                       android:contentDescription="Saját térkép" />
 
                   <View
@@ -453,18 +408,18 @@ jobs:
                       android:layout_weight="1" />
 
                   <ImageView
-                      android:layout_width="34dp"
-                      android:layout_height="34dp"
+                      android:layout_width="32dp"
+                      android:layout_height="32dp"
                       android:padding="6dp"
-                      android:background="@drawable/circle_own"
-                      android:src="@drawable/ic_chevron"
+                      android:background="@drawable/one_circle_purple"
+                      android:src="@drawable/one_chevron"
                       android:contentDescription="Megnyitás" />
               </LinearLayout>
 
           </LinearLayout>
           EOF
 
-          cat > "$RES_DIR/xml/chatgpt_maps_widget_info_modern.xml" <<'EOF'
+          cat > "$RES_DIR/xml/widget_one_info.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
               android:minWidth="250dp"
@@ -473,17 +428,40 @@ jobs:
               android:minResizeHeight="60dp"
               android:targetCellWidth="4"
               android:targetCellHeight="1"
-              android:initialLayout="@layout/widget_chatgpt_maps_modern"
+              android:initialLayout="@layout/widget_one"
               android:resizeMode="horizontal"
               android:widgetCategory="home_screen"
               android:updatePeriodMillis="0" />
           EOF
 
-          # Remove any previous registration of our widget/activity and add one clean,
-          # exported widget receiver. This is important for Samsung One UI launchers.
-          sed -i '/ChatGPTMapsWidgetProvider/d' "$MANIFEST"
+          # Clean all old appwidget receivers from the manifest.
+          awk '
+            BEGIN { in_receiver=0; receiver_has_widget=0; block="" }
+            /<receiver([[:space:]]|>)/ {
+              in_receiver=1
+              receiver_has_widget=0
+              block=$0 "\n"
+              next
+            }
+            in_receiver {
+              block=block $0 "\n"
+              if ($0 ~ /appwidget.action.APPWIDGET_UPDATE/) receiver_has_widget=1
+              if ($0 ~ /<\/receiver>/) {
+                if (!receiver_has_widget) printf "%s", block
+                in_receiver=0
+                block=""
+              }
+              next
+            }
+            { print }
+          ' "$MANIFEST" > "$MANIFEST.tmp"
+
+          mv "$MANIFEST.tmp" "$MANIFEST"
+
+          # Remove the old widget Activity registration if it exists.
           sed -i '/ChatGPTMapsWidgetActivity/d' "$MANIFEST"
 
+          # Add exactly one widget receiver.
           awk -v pkg="$PACKAGE" '
             /<\/application>/ && !done {
               print "        <receiver"
@@ -495,11 +473,8 @@ jobs:
               print "            </intent-filter>"
               print "            <meta-data"
               print "                android:name=\"android.appwidget.provider\""
-              print "                android:resource=\"@xml/chatgpt_maps_widget_info_modern\" />"
+              print "                android:resource=\"@xml/widget_one_info\" />"
               print "        </receiver>"
-              print "        <activity"
-              print "            android:name=\"" pkg ".ChatGPTMapsWidgetActivity\""
-              print "            android:exported=\"false\" />"
               done=1
             }
             { print }
@@ -507,7 +482,7 @@ jobs:
 
           mv "$MANIFEST.tmp" "$MANIFEST"
 
-          echo "Samsung-kompatibilis widget létrehozva."
+          echo "Pontosan egy widget-provider maradt."
 
       - name: Configure JVM 17
         working-directory: ${{ env.PROJECT_DIR }}
@@ -540,8 +515,7 @@ jobs:
 
       - name: Generate Gradle wrapper
         working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          gradle wrapper --gradle-version 8.10.2
+        run: gradle wrapper --gradle-version 8.10.2
 
       - name: Build APK
         working-directory: ${{ env.PROJECT_DIR }}
