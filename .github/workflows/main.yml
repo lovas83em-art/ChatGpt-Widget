@@ -14,6 +14,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Extract Android project
+        run: |
+          mkdir -p project
+          unzip -q "ChatGPTMapsWidget-GitHub-ApkBuild.zip" -d project
+          echo "ZIP kibontva."
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -36,11 +42,12 @@ jobs:
       - name: Find Android project
         shell: bash
         run: |
-          PROJECT=$(find . \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)
+          PROJECT=$(find project \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)
           if [ -z "$PROJECT" ]; then
-            echo "Nem található Android Gradle projekt."
+            echo "Nem található Android Gradle projekt a ZIP-ben."
             exit 1
           fi
+          echo "Android projekt: $PROJECT"
           echo "PROJECT_DIR=$(dirname "$PROJECT")" >> "$GITHUB_ENV"
 
       - name: Generate Gradle wrapper
@@ -55,4 +62,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ChatGPTMapsWidget-APK
-          path: ${{ env.PROJECT_DIR }}/**/build/outputs/apk/debug/*.apk
+          path: project/**/build/outputs/apk/debug/*.apk
