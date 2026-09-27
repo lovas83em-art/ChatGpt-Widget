@@ -55,7 +55,6 @@ jobs:
         shell: bash
         run: |
           set -e
-
           PROJECT=$(find project -type f \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) -print -quit)
 
           if [ -z "$PROJECT" ]; then
@@ -72,7 +71,7 @@ jobs:
           grep -qxF "android.useAndroidX=true" gradle.properties || echo "android.useAndroidX=true" >> gradle.properties
           grep -qxF "android.enableJetifier=true" gradle.properties || echo "android.enableJetifier=true" >> gradle.properties
 
-      - name: Build a clean Samsung One UI widget
+      - name: Create one working widget and launcher app
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
@@ -85,13 +84,170 @@ jobs:
           SRC_DIR="$APP_DIR/src/main/java/$PKG_PATH"
           RES_DIR="$APP_DIR/src/main/res"
 
-          mkdir -p "$SRC_DIR"
-          mkdir -p "$RES_DIR/layout"
-          mkdir -p "$RES_DIR/xml"
-          mkdir -p "$RES_DIR/drawable"
+          mkdir -p "$SRC_DIR" "$RES_DIR/layout" "$RES_DIR/xml" "$RES_DIR/drawable"
+
+          # Remove old widget/activity implementations.
+          find "$SRC_DIR" -type f -name '*Widget*.kt' -delete
+          rm -f "$SRC_DIR/ChatGPTMapsWidgetActivity.kt"
+          rm -f "$SRC_DIR/MainActivity.kt"
 
           # ------------------------------------------------------------
-          # 1. One provider only, no extra widget activity.
+          # MAIN ACTIVITY: this makes the APK launchable again.
+          # ------------------------------------------------------------
+          cat > "$SRC_DIR/MainActivity.kt" <<'EOF'
+          package com.example.chatgptmaps
+
+          import android.app.Activity
+          import android.content.Intent
+          import android.graphics.Color
+          import android.net.Uri
+          import android.os.Bundle
+          import android.view.Gravity
+          import android.view.View
+          import android.widget.LinearLayout
+          import android.widget.TextView
+
+          class MainActivity : Activity() {
+
+              private fun openPackageOrUrl(packageName: String, url: String) {
+                  val intent =
+                      packageManager.getLaunchIntentForPackage(packageName)
+                          ?: Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                  startActivity(intent)
+              }
+
+              private fun makeCard(
+                  title: String,
+                  subtitle: String,
+                  background: Int,
+                  onClick: () -> Unit
+              ): View {
+                  val card = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      gravity = Gravity.CENTER_VERTICAL
+                      setPadding(30, 22, 30, 22)
+                      setBackgroundColor(background)
+                      setOnClickListener { onClick() }
+                  }
+
+                  val titleView = TextView(this).apply {
+                      text = title
+                      textSize = 22f
+                      setTextColor(Color.WHITE)
+                  }
+
+                  val subtitleView = TextView(this).apply {
+                      text = subtitle
+                      textSize = 14f
+                      setTextColor(Color.WHITE)
+                  }
+
+                  card.addView(titleView)
+                  card.addView(subtitleView)
+
+                  return card
+              }
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+
+                  val root = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      gravity = Gravity.CENTER
+                      setPadding(28, 28, 28, 28)
+                      setBackgroundColor(Color.rgb(10, 18, 22))
+                  }
+
+                  val title = TextView(this).apply {
+                      text = "ChatGPT Maps"
+                      textSize = 28f
+                      setTextColor(Color.WHITE)
+                      gravity = Gravity.CENTER
+                  }
+
+                  root.addView(
+                      title,
+                      LinearLayout.LayoutParams(
+                          LinearLayout.LayoutParams.MATCH_PARENT,
+                          LinearLayout.LayoutParams.WRAP_CONTENT
+                      )
+                  )
+
+                  val maps = makeCard(
+                      "TÉRKÉP",
+                      "Google Maps",
+                      Color.rgb(0, 125, 112)
+                  ) {
+                      openPackageOrUrl(
+                          "com.google.android.apps.maps",
+                          "geo:0,0"
+                      )
+                  }
+
+                  val chat = makeCard(
+                      "CHATGPT",
+                      "ChatGPT",
+                      Color.rgb(0, 105, 170)
+                  ) {
+                      openPackageOrUrl(
+                          "com.openai.chatgpt",
+                          "https://chatgpt.com/"
+                      )
+                  }
+
+                  val own = makeCard(
+                      "SAJÁT TÉRKÉP",
+                      "Térkép",
+                      Color.rgb(91, 42, 180)
+                  ) {
+                      startActivity(
+                          Intent(
+                              Intent.ACTION_VIEW,
+                              Uri.parse("geo:0,0")
+                          )
+                      )
+                  }
+
+                  root.addView(
+                      maps,
+                      LinearLayout.LayoutParams(
+                          LinearLayout.LayoutParams.MATCH_PARENT,
+                          0,
+                          1f
+                      ).apply {
+                          setMargins(0, 16, 0, 8)
+                      }
+                  )
+
+                  root.addView(
+                      chat,
+                      LinearLayout.LayoutParams(
+                          LinearLayout.LayoutParams.MATCH_PARENT,
+                          0,
+                          1f
+                      ).apply {
+                          setMargins(0, 8, 0, 8)
+                      }
+                  )
+
+                  root.addView(
+                      own,
+                      LinearLayout.LayoutParams(
+                          LinearLayout.LayoutParams.MATCH_PARENT,
+                          0,
+                          1f
+                      ).apply {
+                          setMargins(0, 8, 0, 0)
+                      }
+                  )
+
+                  setContentView(root)
+              }
+          }
+          EOF
+
+          # ------------------------------------------------------------
+          # ONE widget provider only.
           # ------------------------------------------------------------
           cat > "$SRC_DIR/ChatGPTMapsWidgetProvider.kt" <<'EOF'
           package com.example.chatgptmaps
@@ -138,7 +294,7 @@ jobs:
                               Uri.parse("https://chatgpt.com/")
                           )
 
-                      val ownMapIntent = Intent(
+                      val ownIntent = Intent(
                           Intent.ACTION_VIEW,
                           Uri.parse("geo:0,0")
                       )
@@ -168,7 +324,7 @@ jobs:
                           PendingIntent.getActivity(
                               context,
                               appWidgetId * 3 + 3,
-                              ownMapIntent,
+                              ownIntent,
                               flags
                           )
                       )
@@ -182,13 +338,8 @@ jobs:
           }
           EOF
 
-          # Remove old widget/activity source files that could create
-          # additional providers or conflicting components.
-          find "$SRC_DIR" -type f -name '*Widget*.kt' ! -name 'ChatGPTMapsWidgetProvider.kt' -delete
-          rm -f "$SRC_DIR/ChatGPTMapsWidgetActivity.kt"
-
           # ------------------------------------------------------------
-          # 2. Simple, Samsung-safe vector icons.
+          # Icons.
           # ------------------------------------------------------------
           cat > "$RES_DIR/drawable/icon_maps.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -252,7 +403,7 @@ jobs:
           EOF
 
           # ------------------------------------------------------------
-          # 3. Colorful tiles. NO visible text.
+          # Widget backgrounds.
           # ------------------------------------------------------------
           cat > "$RES_DIR/drawable/bg_widget.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -272,9 +423,7 @@ jobs:
                   android:centerColor="#008E86"
                   android:endColor="#07515B" />
               <corners android:radius="20dp" />
-              <stroke
-                  android:width="1dp"
-                  android:color="#00E6C6" />
+              <stroke android:width="1dp" android:color="#00E6C6" />
           </shape>
           EOF
 
@@ -288,9 +437,7 @@ jobs:
                   android:centerColor="#087DCC"
                   android:endColor="#06356C" />
               <corners android:radius="20dp" />
-              <stroke
-                  android:width="1dp"
-                  android:color="#00E5FF" />
+              <stroke android:width="1dp" android:color="#00E5FF" />
           </shape>
           EOF
 
@@ -304,38 +451,33 @@ jobs:
                   android:centerColor="#662BD8"
                   android:endColor="#28115F" />
               <corners android:radius="20dp" />
-              <stroke
-                  android:width="1dp"
-                  android:color="#A75CFF" />
+              <stroke android:width="1dp" android:color="#A75CFF" />
           </shape>
           EOF
 
           cat > "$RES_DIR/drawable/circle_green.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
-          <shape xmlns:android="http://schemas.android.com/apk/res/android"
-              android:shape="oval">
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
               <solid android:color="#19B85B" />
           </shape>
           EOF
 
           cat > "$RES_DIR/drawable/circle_blue.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
-          <shape xmlns:android="http://schemas.android.com/apk/res/android"
-              android:shape="oval">
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
               <solid android:color="#087BDB" />
           </shape>
           EOF
 
           cat > "$RES_DIR/drawable/circle_purple.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
-          <shape xmlns:android="http://schemas.android.com/apk/res/android"
-              android:shape="oval">
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
               <solid android:color="#762BE8" />
           </shape>
           EOF
 
           # ------------------------------------------------------------
-          # 4. Very simple RemoteViews layout.
+          # One short horizontal widget, with no visible text.
           # ------------------------------------------------------------
           cat > "$RES_DIR/layout/widget_main.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -443,9 +585,6 @@ jobs:
           </LinearLayout>
           EOF
 
-          # ------------------------------------------------------------
-          # 5. One and ONLY one AppWidgetProvider declaration.
-          # ------------------------------------------------------------
           cat > "$RES_DIR/xml/widget_info.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
@@ -459,7 +598,11 @@ jobs:
               android:updatePeriodMillis="0" />
           EOF
 
-          # Remove every old AppWidgetProvider receiver and write a clean manifest.
+          # ------------------------------------------------------------
+          # Clean manifest:
+          # - ONE launcher activity
+          # - ONE widget provider
+          # ------------------------------------------------------------
           cat > "$MANIFEST" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -470,6 +613,15 @@ jobs:
                   android:supportsRtl="true"
                   android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
+                  <activity
+                      android:name="com.example.chatgptmaps.MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+
                   <receiver
                       android:name="com.example.chatgptmaps.ChatGPTMapsWidgetProvider"
                       android:label="ChatGPT Maps"
@@ -477,7 +629,6 @@ jobs:
                       <intent-filter>
                           <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                       </intent-filter>
-
                       <meta-data
                           android:name="android.appwidget.provider"
                           android:resource="@xml/widget_info" />
@@ -488,7 +639,7 @@ jobs:
           </manifest>
           EOF
 
-          echo "Kész: pontosan 1 widget provider, 0 extra widget/activity."
+          echo "Kész: 1 indítható alkalmazás + pontosan 1 widget."
 
       - name: Configure JVM 17
         working-directory: ${{ env.PROJECT_DIR }}
