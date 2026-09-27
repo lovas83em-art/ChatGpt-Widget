@@ -71,7 +71,7 @@ jobs:
           grep -qxF "android.useAndroidX=true" gradle.properties || echo "android.useAndroidX=true" >> gradle.properties
           grep -qxF "android.enableJetifier=true" gradle.properties || echo "android.enableJetifier=true" >> gradle.properties
 
-      - name: Create app and one simple widget
+      - name: Create compact one-widget version
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
@@ -86,14 +86,12 @@ jobs:
 
           mkdir -p "$SRC_DIR" "$RES_DIR/layout" "$RES_DIR/xml" "$RES_DIR/drawable"
 
-          # Remove previous generated widget/activity files.
+          # Only one generated widget provider/activity.
           find "$SRC_DIR" -type f -name '*Widget*.kt' -delete
           rm -f "$SRC_DIR/ChatGPTMapsWidgetActivity.kt"
           rm -f "$SRC_DIR/MainActivity.kt"
 
-          # ------------------------------------------------------------
-          # Launchable main activity.
-          # ------------------------------------------------------------
+          # Main app screen.
           cat > "$SRC_DIR/MainActivity.kt" <<'EOF'
           package com.example.chatgptmaps
 
@@ -131,17 +129,15 @@ jobs:
                       setTextColor(Color.WHITE)
                       gravity = Gravity.CENTER
                   }
-
                   root.addView(title)
 
                   val info = TextView(this).apply {
-                      text = "A kezdőképernyő widgetből gyorsan megnyithatod a térképet és a ChatGPT-t."
+                      text = "Gyors elérés a térképhez és a ChatGPT-hez."
                       textSize = 16f
                       setTextColor(Color.WHITE)
                       gravity = Gravity.CENTER
                       setPadding(0, 24, 0, 30)
                   }
-
                   root.addView(info)
 
                   val maps = TextView(this).apply {
@@ -149,7 +145,7 @@ jobs:
                       textSize = 22f
                       gravity = Gravity.CENTER
                       setTextColor(Color.WHITE)
-                      setBackgroundColor(Color.rgb(0, 150, 136))
+                      setBackgroundColor(Color.rgb(0, 169, 143))
                       setOnClickListener {
                           openApp("com.google.android.apps.maps", "geo:0,0")
                       }
@@ -160,7 +156,7 @@ jobs:
                       textSize = 22f
                       gravity = Gravity.CENTER
                       setTextColor(Color.WHITE)
-                      setBackgroundColor(Color.rgb(0, 110, 190))
+                      setBackgroundColor(Color.rgb(8, 127, 209))
                       setOnClickListener {
                           openApp("com.openai.chatgpt", "https://chatgpt.com/")
                       }
@@ -171,7 +167,7 @@ jobs:
                       textSize = 22f
                       gravity = Gravity.CENTER
                       setTextColor(Color.WHITE)
-                      setBackgroundColor(Color.rgb(104, 55, 190))
+                      setBackgroundColor(Color.rgb(113, 48, 217))
                       setOnClickListener {
                           startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0")))
                       }
@@ -190,9 +186,7 @@ jobs:
           }
           EOF
 
-          # ------------------------------------------------------------
-          # ONE widget provider.
-          # ------------------------------------------------------------
+          # One widget provider.
           cat > "$SRC_DIR/ChatGPTMapsWidgetProvider.kt" <<'EOF'
           package com.example.chatgptmaps
 
@@ -212,68 +206,64 @@ jobs:
                   appWidgetIds: IntArray
               ) {
                   for (id in appWidgetIds) {
-                      updateWidget(context, appWidgetManager, id)
-                  }
-              }
+                      val views = RemoteViews(
+                          context.packageName,
+                          R.layout.widget_main
+                      )
 
-              private fun updateWidget(
-                  context: Context,
-                  manager: AppWidgetManager,
-                  id: Int
-              ) {
-                  val views = RemoteViews(
-                      context.packageName,
-                      R.layout.widget_main
-                  )
+                      val flags =
+                          PendingIntent.FLAG_UPDATE_CURRENT or
+                          PendingIntent.FLAG_IMMUTABLE
 
-                  val flags =
-                      PendingIntent.FLAG_UPDATE_CURRENT or
-                      PendingIntent.FLAG_IMMUTABLE
+                      val mapsIntent =
+                          context.packageManager.getLaunchIntentForPackage(
+                              "com.google.android.apps.maps"
+                          ) ?: Intent(
+                              Intent.ACTION_VIEW,
+                              Uri.parse("geo:0,0")
+                          )
 
-                  val mapsIntent =
-                      context.packageManager.getLaunchIntentForPackage(
-                          "com.google.android.apps.maps"
-                      ) ?: Intent(
+                      val chatIntent =
+                          context.packageManager.getLaunchIntentForPackage(
+                              "com.openai.chatgpt"
+                          ) ?: Intent(
+                              Intent.ACTION_VIEW,
+                              Uri.parse("https://chatgpt.com/")
+                          )
+
+                      val ownIntent = Intent(
                           Intent.ACTION_VIEW,
                           Uri.parse("geo:0,0")
                       )
 
-                  val chatIntent =
-                      context.packageManager.getLaunchIntentForPackage(
-                          "com.openai.chatgpt"
-                      ) ?: Intent(
-                          Intent.ACTION_VIEW,
-                          Uri.parse("https://chatgpt.com/")
+                      views.setOnClickPendingIntent(
+                          R.id.maps_button,
+                          PendingIntent.getActivity(
+                              context, id * 10 + 1, mapsIntent, flags
+                          )
                       )
 
-                  val ownIntent = Intent(
-                      Intent.ACTION_VIEW,
-                      Uri.parse("geo:0,0")
-                  )
+                      views.setOnClickPendingIntent(
+                          R.id.chatgpt_button,
+                          PendingIntent.getActivity(
+                              context, id * 10 + 2, chatIntent, flags
+                          )
+                      )
 
-                  views.setOnClickPendingIntent(
-                      R.id.maps_button,
-                      PendingIntent.getActivity(context, id * 10 + 1, mapsIntent, flags)
-                  )
+                      views.setOnClickPendingIntent(
+                          R.id.own_button,
+                          PendingIntent.getActivity(
+                              context, id * 10 + 3, ownIntent, flags
+                          )
+                      )
 
-                  views.setOnClickPendingIntent(
-                      R.id.chatgpt_button,
-                      PendingIntent.getActivity(context, id * 10 + 2, chatIntent, flags)
-                  )
-
-                  views.setOnClickPendingIntent(
-                      R.id.own_button,
-                      PendingIntent.getActivity(context, id * 10 + 3, ownIntent, flags)
-                  )
-
-                  manager.updateAppWidget(id, views)
+                      appWidgetManager.updateAppWidget(id, views)
+                  }
               }
           }
           EOF
 
-          # ------------------------------------------------------------
-          # Simple vector icons.
-          # ------------------------------------------------------------
+          # Icons.
           cat > "$RES_DIR/drawable/icon_maps.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
@@ -322,14 +312,11 @@ jobs:
           </vector>
           EOF
 
-          # ------------------------------------------------------------
-          # Simple solid backgrounds: maximum RemoteViews compatibility.
-          # ------------------------------------------------------------
           cat > "$RES_DIR/drawable/widget_background.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <shape xmlns:android="http://schemas.android.com/apk/res/android">
               <solid android:color="#07151B" />
-              <corners android:radius="24dp" />
+              <corners android:radius="18dp" />
           </shape>
           EOF
 
@@ -337,7 +324,7 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <shape xmlns:android="http://schemas.android.com/apk/res/android">
               <solid android:color="#00A98F" />
-              <corners android:radius="20dp" />
+              <corners android:radius="15dp" />
           </shape>
           EOF
 
@@ -345,7 +332,7 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <shape xmlns:android="http://schemas.android.com/apk/res/android">
               <solid android:color="#087FD1" />
-              <corners android:radius="20dp" />
+              <corners android:radius="15dp" />
           </shape>
           EOF
 
@@ -353,13 +340,11 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <shape xmlns:android="http://schemas.android.com/apk/res/android">
               <solid android:color="#7130D9" />
-              <corners android:radius="20dp" />
+              <corners android:radius="15dp" />
           </shape>
           EOF
 
-          # ------------------------------------------------------------
-          # Widget: ONE short horizontal widget, icons only.
-          # ------------------------------------------------------------
+          # Compact widget: target one home-screen row.
           cat > "$RES_DIR/layout/widget_main.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -367,7 +352,7 @@ jobs:
               android:layout_height="match_parent"
               android:orientation="horizontal"
               android:gravity="center"
-              android:padding="4dp"
+              android:padding="3dp"
               android:background="@drawable/widget_background">
 
               <ImageButton
@@ -376,7 +361,7 @@ jobs:
                   android:layout_height="match_parent"
                   android:layout_weight="1"
                   android:layout_margin="2dp"
-                  android:padding="12dp"
+                  android:padding="7dp"
                   android:scaleType="centerInside"
                   android:src="@drawable/icon_maps"
                   android:background="@drawable/card_green"
@@ -388,7 +373,7 @@ jobs:
                   android:layout_height="match_parent"
                   android:layout_weight="1"
                   android:layout_margin="2dp"
-                  android:padding="12dp"
+                  android:padding="7dp"
                   android:scaleType="centerInside"
                   android:src="@drawable/icon_chatgpt"
                   android:background="@drawable/card_blue"
@@ -400,7 +385,7 @@ jobs:
                   android:layout_height="match_parent"
                   android:layout_weight="1"
                   android:layout_margin="2dp"
-                  android:padding="12dp"
+                  android:padding="7dp"
                   android:scaleType="centerInside"
                   android:src="@drawable/icon_compass"
                   android:background="@drawable/card_purple"
@@ -409,23 +394,23 @@ jobs:
           </LinearLayout>
           EOF
 
-          # ------------------------------------------------------------
-          # Exactly ONE AppWidgetProvider entry.
-          # ------------------------------------------------------------
+          # One widget only. 3x1 target, short height.
           cat > "$RES_DIR/xml/widget_info.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-              android:minWidth="250dp"
-              android:minHeight="60dp"
-              android:minResizeWidth="250dp"
-              android:minResizeHeight="60dp"
+              android:minWidth="180dp"
+              android:minHeight="48dp"
+              android:minResizeWidth="180dp"
+              android:minResizeHeight="48dp"
+              android:targetCellWidth="3"
+              android:targetCellHeight="1"
               android:initialLayout="@layout/widget_main"
               android:resizeMode="horizontal"
               android:widgetCategory="home_screen"
               android:updatePeriodMillis="0" />
           EOF
 
-          # Clean manifest: one launcher + one widget provider.
+          # Clean manifest: one launcher + exactly one widget provider.
           cat > "$MANIFEST" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -451,7 +436,6 @@ jobs:
                       <intent-filter>
                           <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                       </intent-filter>
-
                       <meta-data
                           android:name="android.appwidget.provider"
                           android:resource="@xml/widget_info" />
@@ -462,7 +446,7 @@ jobs:
           </manifest>
           EOF
 
-          echo "Elkészült: 1 launcher Activity + pontosan 1 egyszerű widget."
+          echo "Kompakt 3x1 widget elkészült."
 
       - name: Configure JVM 17
         working-directory: ${{ env.PROJECT_DIR }}
