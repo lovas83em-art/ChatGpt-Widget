@@ -21,33 +21,27 @@ jobs:
           java-version: '17'
 
       - name: Set up Android
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          accept-android-sdk-licenses: true
+          log-accepted-android-sdk-licenses: false
 
-      - - name: Accept Android SDK licenses
-  run: yes | sdkmanager --licenses
-
-- name: Install Android SDK
-  run: |
-    sdkmanager "platforms;android-35" "build-tools;35.0."
-
-      - name: Extract Android project
+      - name: Install Android SDK
         run: |
-          mkdir buildsrc
-          ZIP=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
-          unzip -q "$ZIP" -d buildsrc
-          echo "ZIP: $ZIP"
-          find buildsrc -maxdepth 3 -type f | head -50
-
-      - name: Find project
-        run: |
-          PROJECT=$(find buildsrc -name "settings.gradle.kts" -type f | head -n 1)
-          echo "PROJECT_FILE=$PROJECT" >> "$GITHUB_ENV"
-          echo "PROJECT_DIR=$(dirname "$PROJECT")" >> "$GITHUB_ENV"
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.10.2'
+
+      - name: Find Android project
+        shell: bash
+        run: |
+          PROJECT=$(find . \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)
+          if [ -z "$PROJECT" ]; then
+            echo "Nem található Android Gradle projekt."
+            exit 1
+          fi
+          echo "PROJECT_DIR=$(dirname "$PROJECT")" >> "$GITHUB_ENV"
 
       - name: Generate Gradle wrapper
         working-directory: ${{ env.PROJECT_DIR }}
@@ -55,10 +49,10 @@ jobs:
 
       - name: Build APK
         working-directory: ${{ env.PROJECT_DIR }}
-        run: ./gradlew assembleDebug
+        run: ./gradlew --no-daemon assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: ChatGPTMapsWidget-APK
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.PROJECT_DIR }}/**/build/outputs/apk/debug/*.apk
