@@ -17,9 +17,13 @@ jobs:
       - name: Extract Android project
         shell: bash
         run: |
+          set -e
+
           mkdir -p project
 
-          ZIP=$(find . -maxdepth 1 -type f -name 'ChatGPTMapsWidget-GitHub-ApkBuild.zip' -print -quit)
+          ZIP=$(find . -maxdepth 1 -type f \
+            -name 'ChatGPTMapsWidget-GitHub-ApkBuild.zip' \
+            -print -quit)
 
           if [ -z "$ZIP" ]; then
             echo "Nem található a ChatGPTMapsWidget-GitHub-ApkBuild.zip fájl."
@@ -27,6 +31,7 @@ jobs:
           fi
 
           unzip -q "$ZIP" -d project
+
           echo "ZIP kibontva."
 
       - name: Set up Java
@@ -54,7 +59,11 @@ jobs:
       - name: Find Android project
         shell: bash
         run: |
-          PROJECT=$(find project -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)
+          set -e
+
+          PROJECT=$(find project -type f \
+            -name settings.gradle -o -name settings.gradle.kts \
+            -print -quit)
 
           if [ -z "$PROJECT" ]; then
             echo "Nem található Android Gradle projekt."
@@ -62,58 +71,31 @@ jobs:
           fi
 
           echo "Android projekt: $PROJECT"
-          echo "PROJECT_DIR=$(dirname "$PROJECT")" >> "$GITHUB_ENV"
+
+          PROJECT_DIR=$(dirname "$PROJECT")
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - name: Enable AndroidX
         working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
         run: |
           touch gradle.properties
-          grep -qxF "android.useAndroidX=true" gradle.properties || echo "android.useAndroidX=true" >> gradle.properties
-          grep -qxF "android.enableJetifier=true" gradle.properties || echo "android.enableJetifier=true" >> gradle.properties
 
-      - name: Configure JVM 17
+          grep -qxF "android.useAndroidX=true" gradle.properties \
+            || echo "android.useAndroidX=true" >> gradle.properties
+
+          grep -qxF "android.enableJetifier=true" gradle.properties \
+            || echo "android.enableJetifier=true" >> gradle.properties
+
+      - name: Add 3rd button home-screen widget
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
-          cat > jvm17.gradle <<'EOF'
-          allprojects {
-              afterEvaluate {
-                  if (plugins.hasPlugin("com.android.application") ||
-                      plugins.hasPlugin("com.android.library")) {
-                      android {
-                          compileOptions {
-                              sourceCompatibility JavaVersion.VERSION_17
-                              targetCompatibility JavaVersion.VERSION_17
-                          }
-                      }
-                  }
-              }
+          set -e
 
-              tasks.configureEach { task ->
-                  if (task.name.contains("Kotlin")) {
-                      try {
-                          task.kotlinOptions.jvmTarget = "17"
-                      } catch (Exception ignored) {
-                      }
-                  }
-              }
-          }
-          EOF
+          echo "Widget létrehozása..."
 
-      - name: Generate Gradle wrapper
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          gradle wrapper --gradle-version 8.10.2
-
-      - name: Build APK
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          ./gradlew --no-daemon \
-            --init-script jvm17.gradle \
-            assembleDebug
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: ChatGPTMapsWidget-APK
-          path: ${{ env.PROJECT_DIR }}/**/build/outputs/apk/debug/*.apk
+          APP_DIR=$(find . -type f \
+            -path '*/src/main/AndroidManifest.xml' \
+            -print -quit | sed 's#/
