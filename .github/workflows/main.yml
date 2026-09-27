@@ -15,9 +15,18 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Extract Android project
+        shell: bash
         run: |
           mkdir -p project
-          unzip -q "ChatGPTMapsWidget-GitHub-ApkBuild.zip" -d project
+
+          ZIP=$(find . -maxdepth 1 -type f -name 'ChatGPTMapsWidget-GitHub-ApkBuild.zip' -print -quit)
+
+          if [ -z "$ZIP" ]; then
+            echo "Nem található a ChatGPTMapsWidget-GitHub-ApkBuild.zip fájl."
+            exit 1
+          fi
+
+          unzip -q "$ZIP" -d project
           echo "ZIP kibontva."
 
       - name: Set up Java
@@ -33,20 +42,25 @@ jobs:
           log-accepted-android-sdk-licenses: false
 
       - name: Install Android SDK
+        shell: bash
         run: |
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
 
       - name: Find Android project
         shell: bash
         run: |
-          PROJECT=$(find project \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)
+          PROJECT=$(find project -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)
+
           if [ -z "$PROJECT" ]; then
-            echo "Nem található Android Gradle projekt a ZIP-ben."
+            echo "Nem található Android Gradle projekt."
             exit 1
           fi
+
           echo "Android projekt: $PROJECT"
           echo "PROJECT_DIR=$(dirname "$PROJECT")" >> "$GITHUB_ENV"
 
@@ -54,18 +68,42 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           touch gradle.properties
-          echo "android.useAndroidX=true" >> gradle.properties
+          grep -qxF "android.useAndroidX=true" gradle.properties || echo "android.useAndroidX=true" >> gradle.properties
+          grep -qxF "android.enableJetifier=true" gradle.properties || echo "android.enableJetifier=true" >> gradle.properties
+
+      - name: Fix Java and Kotlin JVM target
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          cat >> app/build.gradle <<'EOF'
+
+          // Force Java and Kotlin to use JVM 17
+          android {
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
+          }
+          EOF
+
+          echo "Java/Kotlin JVM target 17 beállítva."
 
       - name: Generate Gradle wrapper
         working-directory: ${{ env.PROJECT_DIR }}
-        run: gradle wrapper --gradle-version 8.10.2
+        run: |
+          gradle wrapper --gradle-version 8.10.2
 
       - name: Build APK
         working-directory: ${{ env.PROJECT_DIR }}
-        run: ./gradlew --no-daemon assembleDebug
+        run: |
+          ./gradlew --no-daemon assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: ChatGPTMapsWidget-APK
-          path: project/**/build/outputs/apk/debug/*.apk
+          path: ${{ env.PROJECT_DIR }}/**/build/outputs/apk/debug/*.apk
