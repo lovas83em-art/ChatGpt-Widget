@@ -71,27 +71,6 @@ jobs:
           grep -qxF "android.useAndroidX=true" gradle.properties || echo "android.useAndroidX=true" >> gradle.properties
           grep -qxF "android.enableJetifier=true" gradle.properties || echo "android.enableJetifier=true" >> gradle.properties
 
-      - name: Fix Java and Kotlin JVM target
-        working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          cat >> app/build.gradle <<'EOF'
-
-          // Force Java and Kotlin to use JVM 17
-          android {
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_17
-                  targetCompatibility JavaVersion.VERSION_17
-              }
-
-              kotlinOptions {
-                  jvmTarget = '17'
-              }
-          }
-          EOF
-
-          echo "Java/Kotlin JVM target 17 beállítva."
-
       - name: Generate Gradle wrapper
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
@@ -100,7 +79,8 @@ jobs:
       - name: Build APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          ./gradlew --no-daemon assembleDebug
+          ./gradlew --no-daemon assembleDebug \
+            -Dorg.gradle.jvmargs="-Xmx2048m"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
