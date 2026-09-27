@@ -18,18 +18,17 @@ jobs:
         shell: bash
         run: |
           set -e
-
+          rm -rf project
           mkdir -p project
 
           ZIP=$(find . -maxdepth 1 -type f -name 'ChatGPTMapsWidget-GitHub-ApkBuild.zip' -print -quit)
 
           if [ -z "$ZIP" ]; then
-            echo "Nem található a ZIP fájl."
+            echo "Nem található a ChatGPTMapsWidget-GitHub-ApkBuild.zip fájl."
             exit 1
           fi
 
           unzip -q "$ZIP" -d project
-
           echo "ZIP kibontva."
 
       - name: Set up Java
@@ -59,11 +58,7 @@ jobs:
         run: |
           set -e
 
-          PROJECT=$(find project -type f -name 'settings.gradle' -print -quit)
-
-          if [ -z "$PROJECT" ]; then
-            PROJECT=$(find project -type f -name 'settings.gradle.kts' -print -quit)
-          fi
+          PROJECT=$(find project -type f \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) -print -quit)
 
           if [ -z "$PROJECT" ]; then
             echo "Nem található Android Gradle projekt."
@@ -71,242 +66,439 @@ jobs:
           fi
 
           echo "Android projekt: $PROJECT"
-
-          PROJECT_DIR=$(dirname "$PROJECT")
-
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "PROJECT_DIR=$(dirname "$PROJECT")" >> "$GITHUB_ENV"
 
       - name: Enable AndroidX
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           touch gradle.properties
+          grep -qxF "android.useAndroidX=true" gradle.properties || echo "android.useAndroidX=true" >> gradle.properties
+          grep -qxF "android.enableJetifier=true" gradle.properties || echo "android.enableJetifier=true" >> gradle.properties
 
-          grep -qxF "android.useAndroidX=true" gradle.properties || \
-            echo "android.useAndroidX=true" >> gradle.properties
-
-          grep -qxF "android.enableJetifier=true" gradle.properties || \
-            echo "android.enableJetifier=true" >> gradle.properties
-
-      - name: Add 3rd button home-screen widget
+      - name: Make modern home-screen widget
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -e
 
-          echo "Widget létrehozása..."
+          echo "Modern widget létrehozása..."
 
-          MANIFEST="./app/src/main/AndroidManifest.xml"
           APP_DIR="./app"
+          MANIFEST="$APP_DIR/src/main/AndroidManifest.xml"
           PACKAGE="com.example.chatgptmaps"
+          PKG_PATH="com/example/chatgptmaps"
+          SRC_DIR="$APP_DIR/src/main/java/$PKG_PATH"
+          RES_DIR="$APP_DIR/src/main/res"
 
           if [ ! -f "$MANIFEST" ]; then
             echo "Nem található: $MANIFEST"
             exit 1
           fi
 
-          echo "Manifest: $MANIFEST"
-          echo "App könyvtár: $APP_DIR"
-          echo "Android package: $PACKAGE"
-
-          SRC_DIR="$APP_DIR/src/main/java/com/example/chatgptmaps"
-
           mkdir -p "$SRC_DIR"
-          mkdir -p "$APP_DIR/src/main/res/layout"
-          mkdir -p "$APP_DIR/src/main/res/xml"
+          mkdir -p "$RES_DIR/layout"
+          mkdir -p "$RES_DIR/xml"
+          mkdir -p "$RES_DIR/drawable"
 
-          cat > "$SRC_DIR/ChatGPTMapsWidgetProvider.java" <<'EOF'
-          package com.example.chatgptmaps;
+          cat > "$SRC_DIR/ChatGPTMapsWidgetProvider.kt" <<'EOF'
+          package com.example.chatgptmaps
 
-          import android.app.PendingIntent;
-          import android.appwidget.AppWidgetManager;
-          import android.appwidget.AppWidgetProvider;
-          import android.content.Context;
-          import android.content.Intent;
-          import android.widget.RemoteViews;
+          import android.app.PendingIntent
+          import android.appwidget.AppWidgetManager
+          import android.appwidget.AppWidgetProvider
+          import android.content.Context
+          import android.content.Intent
+          import android.net.Uri
+          import android.widget.RemoteViews
 
-          public class ChatGPTMapsWidgetProvider extends AppWidgetProvider {
+          class ChatGPTMapsWidgetProvider : AppWidgetProvider() {
 
-              @Override
-              public void onUpdate(
-                      Context context,
-                      AppWidgetManager manager,
-                      int[] appWidgetIds) {
+              override fun onUpdate(
+                  context: Context,
+                  appWidgetManager: AppWidgetManager,
+                  appWidgetIds: IntArray
+              ) {
+                  for (appWidgetId in appWidgetIds) {
+                      val views = RemoteViews(
+                          context.packageName,
+                          R.layout.widget_chatgpt_maps_modern
+                      )
 
-                  for (int appWidgetId : appWidgetIds) {
+                      val chatGptIntent =
+                          context.packageManager.getLaunchIntentForPackage("com.openai.chatgpt")
+                              ?: Intent(
+                                  Intent.ACTION_VIEW,
+                                  Uri.parse("https://chatgpt.com/")
+                              )
 
-                      RemoteViews views = new RemoteViews(
-                              context.getPackageName(),
-                              R.layout.chatgpt_maps_widget
-                      );
+                      val googleMapsIntent =
+                          context.packageManager.getLaunchIntentForPackage(
+                              "com.google.android.apps.maps"
+                          ) ?: Intent(
+                              Intent.ACTION_VIEW,
+                              Uri.parse("geo:0,0")
+                          )
 
-                      Intent intent = new Intent(
-                              context,
-                              ChatGPTMapsWidgetActivity.class
-                      );
+                      val ownMapIntent = Intent(
+                          context,
+                          ChatGPTMapsWidgetActivity::class.java
+                      )
 
-                      PendingIntent pendingIntent =
-                              PendingIntent.getActivity(
-                                      context,
-                                      appWidgetId,
-                                      intent,
-                                      PendingIntent.FLAG_UPDATE_CURRENT
-                                      | PendingIntent.FLAG_IMMUTABLE
-                              );
+                      val flags =
+                          PendingIntent.FLAG_UPDATE_CURRENT or
+                          PendingIntent.FLAG_IMMUTABLE
+
+                      val chatGptPendingIntent = PendingIntent.getActivity(
+                          context,
+                          appWidgetId * 10 + 1,
+                          chatGptIntent,
+                          flags
+                      )
+
+                      val googleMapsPendingIntent = PendingIntent.getActivity(
+                          context,
+                          appWidgetId * 10 + 2,
+                          googleMapsIntent,
+                          flags
+                      )
+
+                      val ownMapPendingIntent = PendingIntent.getActivity(
+                          context,
+                          appWidgetId * 10 + 3,
+                          ownMapIntent,
+                          flags
+                      )
 
                       views.setOnClickPendingIntent(
-                              R.id.widget_open,
-                              pendingIntent
-                      );
+                          R.id.widget_chatgpt_button,
+                          chatGptPendingIntent
+                      )
 
-                      manager.updateAppWidget(
-                              appWidgetId,
-                              views
-                      );
+                      views.setOnClickPendingIntent(
+                          R.id.widget_google_maps_button,
+                          googleMapsPendingIntent
+                      )
+
+                      views.setOnClickPendingIntent(
+                          R.id.widget_own_map_button,
+                          ownMapPendingIntent
+                      )
+
+                      appWidgetManager.updateAppWidget(appWidgetId, views)
                   }
               }
           }
           EOF
 
-          cat > "$SRC_DIR/ChatGPTMapsWidgetActivity.java" <<'EOF'
-          package com.example.chatgptmaps;
+          cat > "$SRC_DIR/ChatGPTMapsWidgetActivity.kt" <<'EOF'
+          package com.example.chatgptmaps
 
-          import android.app.Activity;
-          import android.content.Intent;
-          import android.net.Uri;
-          import android.os.Bundle;
-          import android.view.Gravity;
-          import android.widget.Button;
-          import android.widget.LinearLayout;
-          import android.widget.TextView;
+          import android.app.Activity
+          import android.content.Intent
+          import android.net.Uri
+          import android.os.Bundle
+          import android.graphics.Color
+          import android.view.Gravity
+          import android.widget.Button
+          import android.widget.LinearLayout
+          import android.widget.TextView
 
-          public class ChatGPTMapsWidgetActivity extends Activity {
+          class ChatGPTMapsWidgetActivity : Activity() {
 
-              @Override
-              protected void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
 
-                  LinearLayout root = new LinearLayout(this);
-                  root.setOrientation(LinearLayout.VERTICAL);
-                  root.setGravity(Gravity.CENTER);
-                  root.setPadding(40, 40, 40, 40);
+                  val root = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      gravity = Gravity.CENTER
+                      setPadding(40, 40, 40, 40)
+                  }
 
-                  TextView title = new TextView(this);
-                  title.setText("SAJÁT TÉRKÉP / AI");
-                  title.setTextSize(26);
-                  title.setGravity(Gravity.CENTER);
+                  val title = TextView(this).apply {
+                      text = "SAJÁT TÉRKÉP / AI"
+                      textSize = 24f
+                      setTextColor(Color.BLACK)
+                      gravity = Gravity.CENTER
+                  }
 
-                  TextView info = new TextView(this);
-                  info.setText(
-                      "A kezdőképernyő widgetből megnyitott " +
-                      "Saját térkép / AI felület."
-                  );
-                  info.setTextSize(17);
-                  info.setGravity(Gravity.CENTER);
-                  info.setPadding(0, 25, 0, 35);
+                  val info = TextView(this).apply {
+                      text = "A widget 3. gombja innen nyitja meg a saját térkép / AI felületet."
+                      textSize = 16f
+                      gravity = Gravity.CENTER
+                      setPadding(0, 24, 0, 32)
+                  }
 
-                  Button maps = new Button(this);
-                  maps.setText("GOOGLE MAPS MEGNYITÁSA");
-
-                  maps.setOnClickListener(v -> {
-                      Intent intent = new Intent(
-                              Intent.ACTION_VIEW,
-                              Uri.parse("geo:0,0")
-                      );
-                      startActivity(intent);
-                  });
-
-                  Button chatgpt = new Button(this);
-                  chatgpt.setText("CHATGPT MEGNYITÁSA");
-
-                  chatgpt.setOnClickListener(v -> {
-                      Intent intent =
-                              getPackageManager()
-                                      .getLaunchIntentForPackage(
-                                              "com.openai.chatgpt"
-                                      );
-
-                      if (intent != null) {
-                          startActivity(intent);
-                      } else {
+                  val mapsButton = Button(this).apply {
+                      text = "GOOGLE MAPS MEGNYITÁSA"
+                      setOnClickListener {
                           startActivity(
-                                  new Intent(
-                                          Intent.ACTION_VIEW,
-                                          Uri.parse("https://chatgpt.com/")
-                                  )
-                          );
+                              Intent(
+                                  Intent.ACTION_VIEW,
+                                  Uri.parse("geo:0,0")
+                              )
+                          )
                       }
-                  });
+                  }
 
-                  root.addView(title);
-                  root.addView(info);
-                  root.addView(maps);
-                  root.addView(chatgpt);
+                  val chatButton = Button(this).apply {
+                      text = "CHATGPT MEGNYITÁSA"
+                      setOnClickListener {
+                          val launch =
+                              packageManager.getLaunchIntentForPackage("com.openai.chatgpt")
+                                  ?: Intent(
+                                      Intent.ACTION_VIEW,
+                                      Uri.parse("https://chatgpt.com/")
+                                  )
+                          startActivity(launch)
+                      }
+                  }
 
-                  setContentView(root);
+                  root.addView(title)
+                  root.addView(info)
+                  root.addView(
+                      mapsButton,
+                      LinearLayout.LayoutParams(
+                          LinearLayout.LayoutParams.MATCH_PARENT,
+                          LinearLayout.LayoutParams.WRAP_CONTENT
+                      )
+                  )
+                  root.addView(
+                      chatButton,
+                      LinearLayout.LayoutParams(
+                          LinearLayout.LayoutParams.MATCH_PARENT,
+                          LinearLayout.LayoutParams.WRAP_CONTENT
+                      )
+                  )
+
+                  setContentView(root)
               }
           }
           EOF
 
-          cat > "$APP_DIR/src/main/res/layout/chatgpt_maps_widget.xml" <<'EOF'
+          cat > "$RES_DIR/drawable/widget_background.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android">
+              <solid android:color="#17181C" />
+              <corners android:radius="28dp" />
+              <padding
+                  android:left="10dp"
+                  android:top="10dp"
+                  android:right="10dp"
+                  android:bottom="10dp" />
+          </shape>
+          EOF
 
-          <LinearLayout
-              xmlns:android="http://schemas.android.com/apk/res/android"
+          cat > "$RES_DIR/drawable/widget_button_background.xml" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android">
+              <solid android:color="#2B2D33" />
+              <corners android:radius="22dp" />
+              <stroke
+                  android:width="1dp"
+                  android:color="#454851" />
+              <padding
+                  android:left="8dp"
+                  android:top="8dp"
+                  android:right="8dp"
+                  android:bottom="8dp" />
+          </shape>
+          EOF
+
+          cat > "$RES_DIR/drawable/widget_icon_circle.xml" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android"
+              android:shape="oval">
+              <solid android:color="#3B3E47" />
+          </shape>
+          EOF
+
+          cat > "$RES_DIR/drawable/ic_sparkles.xml" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="32dp"
+              android:height="32dp"
+              android:viewportWidth="32"
+              android:viewportHeight="32">
+              <path
+                  android:fillColor="#FFFFFF"
+                  android:pathData="M16,2 L18.5,11.5 L28,14 L18.5,16.5 L16,26 L13.5,16.5 L4,14 L13.5,11.5 Z" />
+              <path
+                  android:fillColor="#FFFFFF"
+                  android:pathData="M25,20 L26.2,24 L30,25 L26.2,26 L25,30 L23.8,26 L20,25 L23.8,24 Z" />
+          </vector>
+          EOF
+
+          cat > "$RES_DIR/drawable/ic_map_pin.xml" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="32dp"
+              android:height="32dp"
+              android:viewportWidth="32"
+              android:viewportHeight="32">
+              <path
+                  android:fillColor="#FFFFFF"
+                  android:pathData="M16,2 C10.5,2 6,6.5 6,12 C6,19.5 16,30 16,30 C16,30 26,19.5 26,12 C26,6.5 21.5,2 16,2 Z M16,16 C13.8,16 12,14.2 12,12 C12,9.8 13.8,8 16,8 C18.2,8 20,9.8 20,12 C20,14.2 18.2,16 16,16 Z" />
+          </vector>
+          EOF
+
+          cat > "$RES_DIR/drawable/ic_compass.xml" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="32dp"
+              android:height="32dp"
+              android:viewportWidth="32"
+              android:viewportHeight="32">
+              <path
+                  android:fillColor="#FFFFFF"
+                  android:pathData="M16,2 A14,14 0,1 0,16 30 A14,14 0,1 0,16 2 Z M21.5,10.5 L18,18 L10.5,21.5 L14,14 Z M16,15 A1.5,1.5 0,1 0,16 18 A1.5,1.5 0,1 0,16 15 Z" />
+          </vector>
+          EOF
+
+          cat > "$RES_DIR/layout/widget_chatgpt_maps_modern.xml" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:id="@android:id/background"
               android:layout_width="match_parent"
               android:layout_height="match_parent"
-              android:orientation="vertical"
+              android:orientation="horizontal"
               android:gravity="center"
-              android:padding="12dp"
-              android:background="#E8E8E8">
+              android:padding="10dp"
+              android:background="@drawable/widget_background">
 
-              <TextView
-                  android:id="@+id/widget_open"
-                  android:layout_width="match_parent"
+              <LinearLayout
+                  android:id="@+id/widget_chatgpt_button"
+                  android:layout_width="0dp"
                   android:layout_height="match_parent"
+                  android:layout_weight="1"
+                  android:layout_margin="4dp"
+                  android:orientation="vertical"
                   android:gravity="center"
-                  android:text="SAJÁT TÉRKÉP / AI&#10;&#10;Koppints a megnyitáshoz"
-                  android:textStyle="bold"
-                  android:textSize="16sp"
-                  android:textColor="#333333"
-                  android:clickable="true" />
+                  android:clickable="true"
+                  android:focusable="true"
+                  android:background="@drawable/widget_button_background">
+
+                  <ImageView
+                      android:layout_width="42dp"
+                      android:layout_height="42dp"
+                      android:padding="7dp"
+                      android:background="@drawable/widget_icon_circle"
+                      android:src="@drawable/ic_sparkles"
+                      android:contentDescription="ChatGPT Maps" />
+
+                  <TextView
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:layout_marginTop="7dp"
+                      android:text="CHATGPT"
+                      android:textSize="12sp"
+                      android:textStyle="bold"
+                      android:textColor="#FFFFFF"
+                      android:gravity="center" />
+              </LinearLayout>
+
+              <LinearLayout
+                  android:id="@+id/widget_google_maps_button"
+                  android:layout_width="0dp"
+                  android:layout_height="match_parent"
+                  android:layout_weight="1"
+                  android:layout_margin="4dp"
+                  android:orientation="vertical"
+                  android:gravity="center"
+                  android:clickable="true"
+                  android:focusable="true"
+                  android:background="@drawable/widget_button_background">
+
+                  <ImageView
+                      android:layout_width="42dp"
+                      android:layout_height="42dp"
+                      android:padding="7dp"
+                      android:background="@drawable/widget_icon_circle"
+                      android:src="@drawable/ic_map_pin"
+                      android:contentDescription="Google Maps" />
+
+                  <TextView
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:layout_marginTop="7dp"
+                      android:text="GOOGLE MAPS"
+                      android:textSize="12sp"
+                      android:textStyle="bold"
+                      android:textColor="#FFFFFF"
+                      android:gravity="center" />
+              </LinearLayout>
+
+              <LinearLayout
+                  android:id="@+id/widget_own_map_button"
+                  android:layout_width="0dp"
+                  android:layout_height="match_parent"
+                  android:layout_weight="1"
+                  android:layout_margin="4dp"
+                  android:orientation="vertical"
+                  android:gravity="center"
+                  android:clickable="true"
+                  android:focusable="true"
+                  android:background="@drawable/widget_button_background">
+
+                  <ImageView
+                      android:layout_width="42dp"
+                      android:layout_height="42dp"
+                      android:padding="7dp"
+                      android:background="@drawable/widget_icon_circle"
+                      android:src="@drawable/ic_compass"
+                      android:contentDescription="Saját térkép és AI" />
+
+                  <TextView
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:layout_marginTop="7dp"
+                      android:text="SAJÁT TÉRKÉP"
+                      android:textSize="12sp"
+                      android:textStyle="bold"
+                      android:textColor="#FFFFFF"
+                      android:gravity="center" />
+              </LinearLayout>
 
           </LinearLayout>
           EOF
 
-          cat > "$APP_DIR/src/main/res/xml/chatgpt_maps_widget_info.xml" <<'EOF'
+          cat > "$RES_DIR/xml/chatgpt_maps_widget_info_modern.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
-
-          <appwidget-provider
-              xmlns:android="http://schemas.android.com/apk/res/android"
-              android:minWidth="180dp"
-              android:minHeight="72dp"
-              android:updatePeriodMillis="86400000"
+          <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+              android:minWidth="250dp"
+              android:minHeight="110dp"
+              android:targetCellWidth="4"
+              android:targetCellHeight="2"
+              android:initialLayout="@layout/widget_chatgpt_maps_modern"
               android:resizeMode="horizontal|vertical"
               android:widgetCategory="home_screen"
-              android:initialLayout="@layout/chatgpt_maps_widget" />
+              android:updatePeriodMillis="0" />
           EOF
 
           if ! grep -q "ChatGPTMapsWidgetProvider" "$MANIFEST"; then
-
-            sed -i '/<\/application>/i\
-              <receiver\
-                  android:name="com.example.chatgptmaps.ChatGPTMapsWidgetProvider"\
-                  android:exported="false">\
-                  <intent-filter>\
-                      <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />\
-                  </intent-filter>\
-                  <meta-data\
-                      android:name="android.appwidget.provider"\
-                      android:resource="@xml/chatgpt_maps_widget_info" />\
-              </receiver>\
-              <activity\
-                  android:name="com.example.chatgptmaps.ChatGPTMapsWidgetActivity"\
-                  android:exported="false" />' "$MANIFEST"
-
+            awk -v pkg="$PACKAGE" '
+              /<\/application>/ && !done {
+                print "        <receiver"
+                print "            android:name=\"" pkg ".ChatGPTMapsWidgetProvider\""
+                print "            android:exported=\"false\">"
+                print "            <intent-filter>"
+                print "                <action android:name=\"android.appwidget.action.APPWIDGET_UPDATE\" />"
+                print "            </intent-filter>"
+                print "            <meta-data"
+                print "                android:name=\"android.appwidget.provider\""
+                print "                android:resource=\"@xml/chatgpt_maps_widget_info_modern\" />"
+                print "        </receiver>"
+                print "        <activity"
+                print "            android:name=\"" pkg ".ChatGPTMapsWidgetActivity\""
+                print "            android:exported=\"false\" />"
+                done=1
+              }
+              { print }
+            ' "$MANIFEST" > "$MANIFEST.tmp"
+            mv "$MANIFEST.tmp" "$MANIFEST"
           fi
 
-          echo "Widget létrehozva."
+          echo "Modern widget elkészült."
 
       - name: Configure JVM 17
         working-directory: ${{ env.PROJECT_DIR }}
@@ -317,7 +509,6 @@ jobs:
               afterEvaluate {
                   if (plugins.hasPlugin("com.android.application") ||
                       plugins.hasPlugin("com.android.library")) {
-
                       android {
                           compileOptions {
                               sourceCompatibility JavaVersion.VERSION_17
