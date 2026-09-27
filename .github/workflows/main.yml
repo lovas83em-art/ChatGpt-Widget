@@ -82,9 +82,11 @@ jobs:
         run: |
           touch gradle.properties
 
-          grep -qxF "android.useAndroidX=true" gradle.properties || echo "android.useAndroidX=true" >> gradle.properties
+          grep -qxF "android.useAndroidX=true" gradle.properties || \
+            echo "android.useAndroidX=true" >> gradle.properties
 
-          grep -qxF "android.enableJetifier=true" gradle.properties || echo "android.enableJetifier=true" >> gradle.properties
+          grep -qxF "android.enableJetifier=true" gradle.properties || \
+            echo "android.enableJetifier=true" >> gradle.properties
 
       - name: Add 3rd button home-screen widget
         working-directory: ${{ env.PROJECT_DIR }}
@@ -94,45 +96,27 @@ jobs:
 
           echo "Widget létrehozása..."
 
-          MANIFEST=$(find . -type f -path '*/src/main/AndroidManifest.xml' -print -quit)
+          MANIFEST="./app/src/main/AndroidManifest.xml"
+          APP_DIR="./app"
+          PACKAGE="com.example.chatgptmaps"
 
-          if [ -z "$MANIFEST" ]; then
-            echo "Nem található AndroidManifest.xml."
+          if [ ! -f "$MANIFEST" ]; then
+            echo "Nem található: $MANIFEST"
             exit 1
           fi
-
-          APP_DIR=$(dirname "$(dirname "$(dirname "$MANIFEST")")")
 
           echo "Manifest: $MANIFEST"
           echo "App könyvtár: $APP_DIR"
-
-          PACKAGE=$(grep -o 'package="[^"]*"' "$MANIFEST" | head -1 | cut -d'"' -f2)
-
-          if [ -z "$PACKAGE" ]; then
-            PACKAGE=$(grep -h -o 'namespace[[:space:]]*["'\''][^"'\'']*["'\'']' "$APP_DIR"/build.gradle* 2>/dev/null | head -1 | sed -E 's/.*["'\'']([^"'\'']+)["'\''].*/\1/')
-          fi
-
-          if [ -z "$PACKAGE" ]; then
-            echo "Nem sikerült meghatározni a package nevet."
-            exit 1
-          fi
-
           echo "Android package: $PACKAGE"
 
-          PKG_PATH=$(echo "$PACKAGE" | tr '.' '/')
-
-          if [ -d "$APP_DIR/src/main/kotlin" ]; then
-            SRC_DIR="$APP_DIR/src/main/kotlin/$PKG_PATH"
-          else
-            SRC_DIR="$APP_DIR/src/main/java/$PKG_PATH"
-          fi
+          SRC_DIR="$APP_DIR/src/main/java/com/example/chatgptmaps"
 
           mkdir -p "$SRC_DIR"
           mkdir -p "$APP_DIR/src/main/res/layout"
           mkdir -p "$APP_DIR/src/main/res/xml"
 
-          cat > "$SRC_DIR/ChatGPTMapsWidgetProvider.java" <<EOF
-          package $PACKAGE;
+          cat > "$SRC_DIR/ChatGPTMapsWidgetProvider.java" <<'EOF'
+          package com.example.chatgptmaps;
 
           import android.app.PendingIntent;
           import android.appwidget.AppWidgetManager;
@@ -184,8 +168,8 @@ jobs:
           }
           EOF
 
-          cat > "$SRC_DIR/ChatGPTMapsWidgetActivity.java" <<EOF
-          package $PACKAGE;
+          cat > "$SRC_DIR/ChatGPTMapsWidgetActivity.java" <<'EOF'
+          package com.example.chatgptmaps;
 
           import android.app.Activity;
           import android.content.Intent;
@@ -213,7 +197,10 @@ jobs:
                   title.setGravity(Gravity.CENTER);
 
                   TextView info = new TextView(this);
-                  info.setText("A kezdőképernyő widgetből megnyitott Saját térkép / AI felület.");
+                  info.setText(
+                      "A kezdőképernyő widgetből megnyitott " +
+                      "Saját térkép / AI felület."
+                  );
                   info.setTextSize(17);
                   info.setGravity(Gravity.CENTER);
                   info.setPadding(0, 25, 0, 35);
@@ -302,31 +289,20 @@ jobs:
 
           if ! grep -q "ChatGPTMapsWidgetProvider" "$MANIFEST"; then
 
-            awk -v pkg="$PACKAGE" '
-            /<\/application>/ && !done {
-                print "        <receiver"
-                print "            android:name=\"" pkg ".ChatGPTMapsWidgetProvider\""
-                print "            android:exported=\"false\">"
-                print ""
-                print "            <intent-filter>"
-                print "                <action android:name=\"android.appwidget.action.APPWIDGET_UPDATE\" />"
-                print "            </intent-filter>"
-                print ""
-                print "            <meta-data"
-                print "                android:name=\"android.appwidget.provider\""
-                print "                android:resource=\"@xml/chatgpt_maps_widget_info\" />"
-                print "        </receiver>"
-                print ""
-                print "        <activity"
-                print "            android:name=\"" pkg ".ChatGPTMapsWidgetActivity\""
-                print "            android:exported=\"false\" />"
-                print ""
-                done=1
-            }
-            { print }
-            ' "$MANIFEST" > "$MANIFEST.tmp"
-
-            mv "$MANIFEST.tmp" "$MANIFEST"
+            sed -i '/<\/application>/i\
+              <receiver\
+                  android:name="com.example.chatgptmaps.ChatGPTMapsWidgetProvider"\
+                  android:exported="false">\
+                  <intent-filter>\
+                      <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />\
+                  </intent-filter>\
+                  <meta-data\
+                      android:name="android.appwidget.provider"\
+                      android:resource="@xml/chatgpt_maps_widget_info" />\
+              </receiver>\
+              <activity\
+                  android:name="com.example.chatgptmaps.ChatGPTMapsWidgetActivity"\
+                  android:exported="false" />' "$MANIFEST"
 
           fi
 
