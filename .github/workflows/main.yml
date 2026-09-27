@@ -71,6 +71,39 @@ jobs:
           grep -qxF "android.useAndroidX=true" gradle.properties || echo "android.useAndroidX=true" >> gradle.properties
           grep -qxF "android.enableJetifier=true" gradle.properties || echo "android.enableJetifier=true" >> gradle.properties
 
+      - name: Configure JVM 17
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          cat > jvm17.gradle <<'EOF'
+          allprojects {
+              tasks.withType(JavaCompile).configureEach {
+                  options.release = 17
+              }
+
+              tasks.configureEach { task ->
+                  if (task.name.contains("Kotlin")) {
+                      try {
+                          task.kotlinOptions.jvmTarget = "17"
+                      } catch (Exception ignored) {
+                      }
+                  }
+              }
+
+              afterEvaluate {
+                  if (plugins.hasPlugin("com.android.application") ||
+                      plugins.hasPlugin("com.android.library")) {
+                      android {
+                          compileOptions {
+                              sourceCompatibility JavaVersion.VERSION_17
+                              targetCompatibility JavaVersion.VERSION_17
+                          }
+                      }
+                  }
+              }
+          }
+          EOF
+
       - name: Generate Gradle wrapper
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
@@ -79,8 +112,9 @@ jobs:
       - name: Build APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          ./gradlew --no-daemon assembleDebug \
-            -Dorg.gradle.jvmargs="-Xmx2048m"
+          ./gradlew --no-daemon \
+            --init-script jvm17.gradle \
+            assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
