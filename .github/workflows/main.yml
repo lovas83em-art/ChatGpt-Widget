@@ -77,19 +77,6 @@ jobs:
         run: |
           cat > jvm17.gradle <<'EOF'
           allprojects {
-              tasks.withType(JavaCompile).configureEach {
-                  options.release = 17
-              }
-
-              tasks.configureEach { task ->
-                  if (task.name.contains("Kotlin")) {
-                      try {
-                          task.kotlinOptions.jvmTarget = "17"
-                      } catch (Exception ignored) {
-                      }
-                  }
-              }
-
               afterEvaluate {
                   if (plugins.hasPlugin("com.android.application") ||
                       plugins.hasPlugin("com.android.library")) {
@@ -98,6 +85,15 @@ jobs:
                               sourceCompatibility JavaVersion.VERSION_17
                               targetCompatibility JavaVersion.VERSION_17
                           }
+                      }
+                  }
+              }
+
+              tasks.configureEach { task ->
+                  if (task.name.contains("Kotlin")) {
+                      try {
+                          task.kotlinOptions.jvmTarget = "17"
+                      } catch (Exception ignored) {
                       }
                   }
               }
