@@ -24,7 +24,22 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install Android SDK
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Extract Android project
+        run: |
+          mkdir buildsrc
+          ZIP=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
+          unzip -q "$ZIP" -d buildsrc
+          echo "ZIP: $ZIP"
+          find buildsrc -maxdepth 3 -type f | head -50
+
+      - name: Find project
+        run: |
+          PROJECT=$(find buildsrc -name "settings.gradle.kts" -type f | head -n 1)
+          echo "PROJECT_FILE=$PROJECT" >> "$GITHUB_ENV"
+          echo "PROJECT_DIR=$(dirname "$PROJECT")" >> "$GITHUB_ENV"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -32,13 +47,15 @@ jobs:
           gradle-version: '8.10.2'
 
       - name: Generate Gradle wrapper
+        working-directory: ${{ env.PROJECT_DIR }}
         run: gradle wrapper --gradle-version 8.10.2
 
       - name: Build APK
+        working-directory: ${{ env.PROJECT_DIR }}
         run: ./gradlew assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: ChatGPTMapsWidget-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
