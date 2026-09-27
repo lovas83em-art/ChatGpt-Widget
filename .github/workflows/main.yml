@@ -50,6 +50,12 @@ jobs:
           echo "Android projekt: $PROJECT"
           echo "PROJECT_DIR=$(dirname "$PROJECT")" >> "$GITHUB_ENV"
 
+      - name: Enable AndroidX
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          touch gradle.properties
+          echo "android.useAndroidX=true" >> gradle.properties
+
       - name: Generate Gradle wrapper
         working-directory: ${{ env.PROJECT_DIR }}
         run: gradle wrapper --gradle-version 8.10.2
