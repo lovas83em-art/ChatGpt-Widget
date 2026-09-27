@@ -316,7 +316,7 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <shape xmlns:android="http://schemas.android.com/apk/res/android">
               <solid android:color="#07151B" />
-              <corners android:radius="18dp" />
+              <corners android:radius="14dp" />
           </shape>
           EOF
 
@@ -324,7 +324,7 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <shape xmlns:android="http://schemas.android.com/apk/res/android">
               <solid android:color="#00A98F" />
-              <corners android:radius="15dp" />
+              <corners android:radius="12dp" />
           </shape>
           EOF
 
@@ -332,7 +332,7 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <shape xmlns:android="http://schemas.android.com/apk/res/android">
               <solid android:color="#087FD1" />
-              <corners android:radius="15dp" />
+              <corners android:radius="12dp" />
           </shape>
           EOF
 
@@ -340,7 +340,7 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <shape xmlns:android="http://schemas.android.com/apk/res/android">
               <solid android:color="#7130D9" />
-              <corners android:radius="15dp" />
+              <corners android:radius="12dp" />
           </shape>
           EOF
 
@@ -352,7 +352,7 @@ jobs:
               android:layout_height="match_parent"
               android:orientation="horizontal"
               android:gravity="center"
-              android:padding="3dp"
+              android:padding="2dp"
               android:background="@drawable/widget_background">
 
               <ImageButton
@@ -360,8 +360,8 @@ jobs:
                   android:layout_width="0dp"
                   android:layout_height="match_parent"
                   android:layout_weight="1"
-                  android:layout_margin="2dp"
-                  android:padding="7dp"
+                  android:layout_margin="1dp"
+                  android:padding="4dp"
                   android:scaleType="centerInside"
                   android:src="@drawable/icon_maps"
                   android:background="@drawable/card_green"
@@ -372,8 +372,8 @@ jobs:
                   android:layout_width="0dp"
                   android:layout_height="match_parent"
                   android:layout_weight="1"
-                  android:layout_margin="2dp"
-                  android:padding="7dp"
+                  android:layout_margin="1dp"
+                  android:padding="4dp"
                   android:scaleType="centerInside"
                   android:src="@drawable/icon_chatgpt"
                   android:background="@drawable/card_blue"
@@ -384,8 +384,8 @@ jobs:
                   android:layout_width="0dp"
                   android:layout_height="match_parent"
                   android:layout_weight="1"
-                  android:layout_margin="2dp"
-                  android:padding="7dp"
+                  android:layout_margin="1dp"
+                  android:padding="4dp"
                   android:scaleType="centerInside"
                   android:src="@drawable/icon_compass"
                   android:background="@drawable/card_purple"
@@ -398,10 +398,10 @@ jobs:
           cat > "$RES_DIR/xml/widget_info.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-              android:minWidth="180dp"
-              android:minHeight="48dp"
-              android:minResizeWidth="180dp"
-              android:minResizeHeight="48dp"
+              android:minWidth="160dp"
+              android:minHeight="40dp"
+              android:minResizeWidth="160dp"
+              android:minResizeHeight="40dp"
               android:targetCellWidth="3"
               android:targetCellHeight="1"
               android:initialLayout="@layout/widget_main"
