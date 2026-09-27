@@ -21,12 +21,10 @@ jobs:
 
           mkdir -p project
 
-          ZIP=$(find . -maxdepth 1 -type f \
-            -name 'ChatGPTMapsWidget-GitHub-ApkBuild.zip' \
-            -print -quit)
+          ZIP=$(find . -maxdepth 1 -type f -name 'ChatGPTMapsWidget-GitHub-ApkBuild.zip' -print -quit)
 
           if [ -z "$ZIP" ]; then
-            echo "Nem található a ChatGPTMapsWidget-GitHub-ApkBuild.zip fájl."
+            echo "Nem található a ZIP fájl."
             exit 1
           fi
 
@@ -61,12 +59,16 @@ jobs:
         run: |
           set -e
 
-          PROJECT=$(find project -type f \
-            -name settings.gradle -o -name settings.gradle.kts \
-            -print -quit)
+          PROJECT=$(find project -type f -name 'settings.gradle' -print -quit)
+
+          if [ -z "$PROJECT" ]; then
+            PROJECT=$(find project -type f -name 'settings.gradle.kts' -print -quit)
+          fi
 
           if [ -z "$PROJECT" ]; then
             echo "Nem található Android Gradle projekt."
+            echo "Talált fájlok:"
+            find project -maxdepth 4 -type f | head -100
             exit 1
           fi
 
@@ -82,11 +84,11 @@ jobs:
         run: |
           touch gradle.properties
 
-          grep -qxF "android.useAndroidX=true" gradle.properties \
-            || echo "android.useAndroidX=true" >> gradle.properties
+          grep -qxF "android.useAndroidX=true" gradle.properties || \
+            echo "android.useAndroidX=true" >> gradle.properties
 
-          grep -qxF "android.enableJetifier=true" gradle.properties \
-            || echo "android.enableJetifier=true" >> gradle.properties
+          grep -qxF "android.enableJetifier=true" gradle.properties || \
+            echo "android.enableJetifier=true" >> gradle.properties
 
       - name: Add 3rd button home-screen widget
         working-directory: ${{ env.PROJECT_DIR }}
@@ -96,6 +98,336 @@ jobs:
 
           echo "Widget létrehozása..."
 
-          APP_DIR=$(find . -type f \
-            -path '*/src/main/AndroidManifest.xml' \
-            -print -quit | sed 's#/
+          MANIFEST=$(find . -type f -path '*/src/main/AndroidManifest.xml' -print -quit)
+
+          if [ -z "$MANIFEST" ]; then
+            echo "Nem található AndroidManifest.xml."
+            exit 1
+          fi
+
+          APP_DIR=$(dirname "$(dirname "$(dirname "$MANIFEST")")")
+
+          echo "Manifest: $MANIFEST"
+          echo "App könyvtár: $APP_DIR"
+
+          PACKAGE=$(python3 - "$APP_DIR" "$MANIFEST" <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          app_dir = pathlib.Path(sys.argv[1])
+          manifest = pathlib.Path(sys.argv[2])
+
+          text = manifest.read_text(encoding="utf-8")
+
+          match = re.search(
+              r'<manifest[^>]*\bpackage=["\']([^"\']+)["\']',
+              text
+          )
+
+          if match:
+              print(match.group(1))
+              raise SystemExit(0)
+
+          for filename in ("build.gradle", "build.gradle.kts"):
+              path = app_dir / filename
+
+              if path.exists():
+                  text = path.read_text(encoding="utf-8")
+
+                  match = re.search(
+                      r'\bnamespace\s*(?:=)?\s*["\']([^"\']+)["\']',
+                      text
+                  )
+
+                  if match:
+                      print(match.group(1))
+                      raise SystemExit(0)
+
+          raise SystemExit(
+              "Nem sikerült meghatározni az Android package nevet."
+          )
+          PY
+          )
+
+          echo "Android package: $PACKAGE"
+
+          PKG_PATH=$(echo "$PACKAGE" | tr '.' '/')
+
+          if [ -d "$APP_DIR/src/main/kotlin" ]; then
+            SRC_DIR="$APP_DIR/src/main/kotlin/$PKG_PATH"
+          else
+            SRC_DIR="$APP_DIR/src/main/java/$PKG_PATH"
+          fi
+
+          mkdir -p "$SRC_DIR"
+          mkdir -p "$APP_DIR/src/main/res/layout"
+          mkdir -p "$APP_DIR/src/main/res/xml"
+
+          cat > "$SRC_DIR/ChatGPTMapsWidgetProvider.java" <<EOF
+          package $PACKAGE;
+
+          import android.app.PendingIntent;
+          import android.appwidget.AppWidgetManager;
+          import android.appwidget.AppWidgetProvider;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.widget.RemoteViews;
+
+          public class ChatGPTMapsWidgetProvider extends AppWidgetProvider {
+
+              @Override
+              public void onUpdate(
+                      Context context,
+                      AppWidgetManager manager,
+                      int[] appWidgetIds) {
+
+                  for (int appWidgetId : appWidgetIds) {
+
+                      RemoteViews views = new RemoteViews(
+                              context.getPackageName(),
+                              R.layout.chatgpt_maps_widget
+                      );
+
+                      Intent intent = new Intent(
+                              context,
+                              ChatGPTMapsWidgetActivity.class
+                      );
+
+                      PendingIntent pendingIntent =
+                              PendingIntent.getActivity(
+                                      context,
+                                      appWidgetId,
+                                      intent,
+                                      PendingIntent.FLAG_UPDATE_CURRENT
+                                      | PendingIntent.FLAG_IMMUTABLE
+                              );
+
+                      views.setOnClickPendingIntent(
+                              R.id.widget_open,
+                              pendingIntent
+                      );
+
+                      manager.updateAppWidget(
+                              appWidgetId,
+                              views
+                      );
+                  }
+              }
+          }
+          EOF
+
+          cat > "$SRC_DIR/ChatGPTMapsWidgetActivity.java" <<EOF
+          package $PACKAGE;
+
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.net.Uri;
+          import android.os.Bundle;
+          import android.view.Gravity;
+          import android.widget.Button;
+          import android.widget.LinearLayout;
+          import android.widget.TextView;
+
+          public class ChatGPTMapsWidgetActivity extends Activity {
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+
+                  LinearLayout root = new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  root.setGravity(Gravity.CENTER);
+                  root.setPadding(40, 40, 40, 40);
+
+                  TextView title = new TextView(this);
+                  title.setText("SAJÁT TÉRKÉP / AI");
+                  title.setTextSize(26);
+                  title.setGravity(Gravity.CENTER);
+
+                  TextView info = new TextView(this);
+                  info.setText(
+                      "A kezdőképernyő widgetből megnyitott " +
+                      "Saját térkép / AI felület."
+                  );
+                  info.setTextSize(17);
+                  info.setGravity(Gravity.CENTER);
+                  info.setPadding(0, 25, 0, 35);
+
+                  Button maps = new Button(this);
+                  maps.setText("GOOGLE MAPS MEGNYITÁSA");
+
+                  maps.setOnClickListener(v -> {
+                      Intent intent = new Intent(
+                          Intent.ACTION_VIEW,
+                          Uri.parse("geo:0,0")
+                      );
+                      startActivity(intent);
+                  });
+
+                  Button chatgpt = new Button(this);
+                  chatgpt.setText("CHATGPT MEGNYITÁSA");
+
+                  chatgpt.setOnClickListener(v -> {
+                      Intent intent =
+                          getPackageManager()
+                              .getLaunchIntentForPackage(
+                                  "com.openai.chatgpt"
+                              );
+
+                      if (intent != null) {
+                          startActivity(intent);
+                      } else {
+                          startActivity(
+                              new Intent(
+                                  Intent.ACTION_VIEW,
+                                  Uri.parse("https://chatgpt.com/")
+                              )
+                          );
+                      }
+                  });
+
+                  root.addView(title);
+                  root.addView(info);
+                  root.addView(maps);
+                  root.addView(chatgpt);
+
+                  setContentView(root);
+              }
+          }
+          EOF
+
+          cat > "$APP_DIR/src/main/res/layout/chatgpt_maps_widget.xml" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+
+          <LinearLayout
+              xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:orientation="vertical"
+              android:gravity="center"
+              android:padding="12dp"
+              android:background="#E8E8E8">
+
+              <TextView
+                  android:id="@+id/widget_open"
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent"
+                  android:gravity="center"
+                  android:text="SAJÁT TÉRKÉP / AI&#10;&#10;Koppints a megnyitáshoz"
+                  android:textStyle="bold"
+                  android:textSize="16sp"
+                  android:textColor="#333333"
+                  android:clickable="true" />
+
+          </LinearLayout>
+          EOF
+
+          cat > "$APP_DIR/src/main/res/xml/chatgpt_maps_widget_info.xml" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+
+          <appwidget-provider
+              xmlns:android="http://schemas.android.com/apk/res/android"
+              android:minWidth="180dp"
+              android:minHeight="72dp"
+              android:updatePeriodMillis="86400000"
+              android:resizeMode="horizontal|vertical"
+              android:widgetCategory="home_screen"
+              android:initialLayout="@layout/chatgpt_maps_widget" />
+          EOF
+
+          python3 - "$MANIFEST" "$PACKAGE" <<'PY'
+          from pathlib import Path
+          import sys
+
+          manifest_path = Path(sys.argv[1])
+          package = sys.argv[2]
+
+          text = manifest_path.read_text(encoding="utf-8")
+
+          if "ChatGPTMapsWidgetProvider" not in text:
+
+              insertion = f'''
+                  <receiver
+                      android:name="{package}.ChatGPTMapsWidgetProvider"
+                      android:exported="false">
+
+                      <intent-filter>
+                          <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                      </intent-filter>
+
+                      <meta-data
+                          android:name="android.appwidget.provider"
+                          android:resource="@xml/chatgpt_maps_widget_info" />
+                  </receiver>
+
+                  <activity
+                      android:name="{package}.ChatGPTMapsWidgetActivity"
+                      android:exported="false" />
+              '''
+
+              if "</application>" not in text:
+                  raise SystemExit(
+                      "Nem található az application lezárása."
+                  )
+
+              text = text.replace(
+                  "</application>",
+                  insertion + "\n</application>",
+                  1
+              )
+
+              manifest_path.write_text(
+                  text,
+                  encoding="utf-8"
+              )
+
+          echo "Widget létrehozva."
+
+      - name: Configure JVM 17
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          cat > jvm17.gradle <<'EOF'
+          allprojects {
+              afterEvaluate {
+                  if (plugins.hasPlugin("com.android.application") ||
+                      plugins.hasPlugin("com.android.library")) {
+
+                      android {
+                          compileOptions {
+                              sourceCompatibility JavaVersion.VERSION_17
+                              targetCompatibility JavaVersion.VERSION_17
+                          }
+                      }
+                  }
+
+                  tasks.configureEach { task ->
+                      if (task.name.contains("Kotlin")) {
+                          try {
+                              task.kotlinOptions.jvmTarget = "17"
+                          } catch (Exception ignored) {
+                          }
+                      }
+                  }
+              }
+          }
+          EOF
+
+      - name: Generate Gradle wrapper
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          gradle wrapper --gradle-version 8.10.2
+
+      - name: Build APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          ./gradlew --no-daemon \
+            --init-script jvm17.gradle \
+            assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChatGPTMapsWidget-APK
+          path: ${{ env.PROJECT_DIR }}/**/build/outputs/apk/debug/*.apk
