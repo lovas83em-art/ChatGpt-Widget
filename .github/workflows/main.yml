@@ -67,8 +67,6 @@ jobs:
 
           if [ -z "$PROJECT" ]; then
             echo "Nem található Android Gradle projekt."
-            echo "Talált fájlok:"
-            find project -maxdepth 4 -type f | head -100
             exit 1
           fi
 
@@ -84,11 +82,9 @@ jobs:
         run: |
           touch gradle.properties
 
-          grep -qxF "android.useAndroidX=true" gradle.properties || \
-            echo "android.useAndroidX=true" >> gradle.properties
+          grep -qxF "android.useAndroidX=true" gradle.properties || echo "android.useAndroidX=true" >> gradle.properties
 
-          grep -qxF "android.enableJetifier=true" gradle.properties || \
-            echo "android.enableJetifier=true" >> gradle.properties
+          grep -qxF "android.enableJetifier=true" gradle.properties || echo "android.enableJetifier=true" >> gradle.properties
 
       - name: Add 3rd button home-screen widget
         working-directory: ${{ env.PROJECT_DIR }}
@@ -110,45 +106,16 @@ jobs:
           echo "Manifest: $MANIFEST"
           echo "App könyvtár: $APP_DIR"
 
-          PACKAGE=$(python3 - "$APP_DIR" "$MANIFEST" <<'PY'
-          import pathlib
-          import re
-          import sys
+          PACKAGE=$(grep -o 'package="[^"]*"' "$MANIFEST" | head -1 | cut -d'"' -f2)
 
-          app_dir = pathlib.Path(sys.argv[1])
-          manifest = pathlib.Path(sys.argv[2])
+          if [ -z "$PACKAGE" ]; then
+            PACKAGE=$(grep -h -o 'namespace[[:space:]]*["'\''][^"'\'']*["'\'']' "$APP_DIR"/build.gradle* 2>/dev/null | head -1 | sed -E 's/.*["'\'']([^"'\'']+)["'\''].*/\1/')
+          fi
 
-          text = manifest.read_text(encoding="utf-8")
-
-          match = re.search(
-              r'<manifest[^>]*\bpackage=["\']([^"\']+)["\']',
-              text
-          )
-
-          if match:
-              print(match.group(1))
-              raise SystemExit(0)
-
-          for filename in ("build.gradle", "build.gradle.kts"):
-              path = app_dir / filename
-
-              if path.exists():
-                  text = path.read_text(encoding="utf-8")
-
-                  match = re.search(
-                      r'\bnamespace\s*(?:=)?\s*["\']([^"\']+)["\']',
-                      text
-                  )
-
-                  if match:
-                      print(match.group(1))
-                      raise SystemExit(0)
-
-          raise SystemExit(
-              "Nem sikerült meghatározni az Android package nevet."
-          )
-          PY
-          )
+          if [ -z "$PACKAGE" ]; then
+            echo "Nem sikerült meghatározni a package nevet."
+            exit 1
+          fi
 
           echo "Android package: $PACKAGE"
 
@@ -246,10 +213,7 @@ jobs:
                   title.setGravity(Gravity.CENTER);
 
                   TextView info = new TextView(this);
-                  info.setText(
-                      "A kezdőképernyő widgetből megnyitott " +
-                      "Saját térkép / AI felület."
-                  );
+                  info.setText("A kezdőképernyő widgetből megnyitott Saját térkép / AI felület.");
                   info.setTextSize(17);
                   info.setGravity(Gravity.CENTER);
                   info.setPadding(0, 25, 0, 35);
@@ -259,8 +223,8 @@ jobs:
 
                   maps.setOnClickListener(v -> {
                       Intent intent = new Intent(
-                          Intent.ACTION_VIEW,
-                          Uri.parse("geo:0,0")
+                              Intent.ACTION_VIEW,
+                              Uri.parse("geo:0,0")
                       );
                       startActivity(intent);
                   });
@@ -270,19 +234,19 @@ jobs:
 
                   chatgpt.setOnClickListener(v -> {
                       Intent intent =
-                          getPackageManager()
-                              .getLaunchIntentForPackage(
-                                  "com.openai.chatgpt"
-                              );
+                              getPackageManager()
+                                      .getLaunchIntentForPackage(
+                                              "com.openai.chatgpt"
+                                      );
 
                       if (intent != null) {
                           startActivity(intent);
                       } else {
                           startActivity(
-                              new Intent(
-                                  Intent.ACTION_VIEW,
-                                  Uri.parse("https://chatgpt.com/")
-                              )
+                                  new Intent(
+                                          Intent.ACTION_VIEW,
+                                          Uri.parse("https://chatgpt.com/")
+                                  )
                           );
                       }
                   });
@@ -336,51 +300,35 @@ jobs:
               android:initialLayout="@layout/chatgpt_maps_widget" />
           EOF
 
-          python3 - "$MANIFEST" "$PACKAGE" <<'PY'
-          from pathlib import Path
-          import sys
+          if ! grep -q "ChatGPTMapsWidgetProvider" "$MANIFEST"; then
 
-          manifest_path = Path(sys.argv[1])
-          package = sys.argv[2]
+            awk -v pkg="$PACKAGE" '
+            /<\/application>/ && !done {
+                print "        <receiver"
+                print "            android:name=\"" pkg ".ChatGPTMapsWidgetProvider\""
+                print "            android:exported=\"false\">"
+                print ""
+                print "            <intent-filter>"
+                print "                <action android:name=\"android.appwidget.action.APPWIDGET_UPDATE\" />"
+                print "            </intent-filter>"
+                print ""
+                print "            <meta-data"
+                print "                android:name=\"android.appwidget.provider\""
+                print "                android:resource=\"@xml/chatgpt_maps_widget_info\" />"
+                print "        </receiver>"
+                print ""
+                print "        <activity"
+                print "            android:name=\"" pkg ".ChatGPTMapsWidgetActivity\""
+                print "            android:exported=\"false\" />"
+                print ""
+                done=1
+            }
+            { print }
+            ' "$MANIFEST" > "$MANIFEST.tmp"
 
-          text = manifest_path.read_text(encoding="utf-8")
+            mv "$MANIFEST.tmp" "$MANIFEST"
 
-          if "ChatGPTMapsWidgetProvider" not in text:
-
-              insertion = f'''
-                  <receiver
-                      android:name="{package}.ChatGPTMapsWidgetProvider"
-                      android:exported="false">
-
-                      <intent-filter>
-                          <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                      </intent-filter>
-
-                      <meta-data
-                          android:name="android.appwidget.provider"
-                          android:resource="@xml/chatgpt_maps_widget_info" />
-                  </receiver>
-
-                  <activity
-                      android:name="{package}.ChatGPTMapsWidgetActivity"
-                      android:exported="false" />
-              '''
-
-              if "</application>" not in text:
-                  raise SystemExit(
-                      "Nem található az application lezárása."
-                  )
-
-              text = text.replace(
-                  "</application>",
-                  insertion + "\n</application>",
-                  1
-              )
-
-              manifest_path.write_text(
-                  text,
-                  encoding="utf-8"
-              )
+          fi
 
           echo "Widget létrehozva."
 
